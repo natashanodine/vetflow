@@ -1,0 +1,17 @@
+{
+  "name": "vetflow",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@vetflow/web",
+    "dev:gateway": "npm run dev --workspace=@vetflow/gateway",
+    "dev:clinic": "npm run dev --workspace=@vetflow/clinic-service",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}
