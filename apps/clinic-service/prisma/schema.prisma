@@ -10,6 +10,7 @@ datasource db {
 enum Species {
   DOG
   CAT
+  HORSE
   BIRD
   RABBIT
   REPTILE

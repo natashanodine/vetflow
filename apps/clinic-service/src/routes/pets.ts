@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js'
 type Species =
   | 'DOG'
   | 'CAT'
+  | 'HORSE'
   | 'BIRD'
   | 'RABBIT'
   | 'REPTILE'
@@ -105,7 +106,7 @@ export const petRoutes: FastifyPluginAsync = async (app) => {
             },
             species: {
               type: 'string',
-              enum: ['DOG', 'CAT', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER'],
+              enum: ['DOG', 'CAT', 'HORSE', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER'],
             },
             breed: {
               type: 'string',
