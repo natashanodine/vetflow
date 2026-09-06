@@ -5,7 +5,7 @@ function App() {
         <p className="font-semibold text-teal-600">VetFlow</p>
 
         <h1 className="mt-2 text-4xl font-bold text-slate-900">
-          Veterinary clinic dashboard
+          Carmen's Veterinary clinic project dashboard
         </h1>
 
         <p className="mt-4 max-w-2xl text-slate-600">
