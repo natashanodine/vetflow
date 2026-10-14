@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/gateway/package.json ./apps/gateway/package.json
 COPY apps/clinic-service/package.json ./apps/clinic-service/package.json
+COPY apps/scheduling-service/package.json ./apps/scheduling-service/package.json
 
 RUN npm ci
 
@@ -24,6 +25,7 @@ COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY apps/gateway/package.json ./apps/gateway/package.json
 COPY apps/clinic-service/package.json ./apps/clinic-service/package.json
+COPY apps/scheduling-service/package.json ./apps/scheduling-service/package.json
 
 RUN npm ci --omit=dev
 

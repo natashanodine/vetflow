@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+enum AppointmentCategory {
+  APPOINTMENT
+  TREATMENT
+  REPRODUCTION
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+
+model Appointment {
+  id              String              @id @default(uuid()) @db.Char(36)
+  patientId       String              @db.Char(36)
+  patientName     String              @db.VarChar(100)
+  ownerId         String              @db.Char(36)
+  title           String              @db.VarChar(160)
+  details         String?             @db.Text
+  startsAt        DateTime            @db.DateTime(3)
+  durationMinutes Int                 @default(30)
+  category        AppointmentCategory @default(APPOINTMENT)
+  status          AppointmentStatus   @default(SCHEDULED)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([startsAt])
+  @@index([patientId])
+  @@index([ownerId])
+}

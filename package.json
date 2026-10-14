@@ -10,6 +10,7 @@
     "dev:web": "npm run dev --workspace=@vetflow/web",
     "dev:gateway": "npm run dev --workspace=@vetflow/gateway",
     "dev:clinic": "npm run dev --workspace=@vetflow/clinic-service",
+    "dev:scheduling": "npm run dev --workspace=@vetflow/scheduling-service",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"

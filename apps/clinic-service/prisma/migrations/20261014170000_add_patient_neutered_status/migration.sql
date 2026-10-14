@@ -1,0 +1,2 @@
+ALTER TABLE `Pet`
+ADD COLUMN `isNeutered` BOOLEAN NOT NULL DEFAULT false AFTER `sex`;

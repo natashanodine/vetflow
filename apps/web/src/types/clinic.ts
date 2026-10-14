@@ -1,4 +1,4 @@
-export interface PetSummary {
+export interface PatientSummary {
   id: string
   name: string
   species: string
@@ -12,18 +12,19 @@ export interface Owner {
   email: string | null
   phone: string
   address: string | null
-  pets: PetSummary[]
+  patients: PatientSummary[]
   createdAt: string
   updatedAt: string
 }
 
-export interface Pet {
+export interface Patient {
   id: string
   ownerId: string
   name: string
   species: string
   breed: string | null
   sex: string
+  isNeutered: boolean
   dateOfBirth: string | null
   color: string | null
   microchip: string | null
@@ -36,4 +37,23 @@ export interface Pet {
     email: string | null
     phone: string
   }
+}
+
+export interface CreateOwnerInput {
+  firstName: string
+  lastName: string
+  phone: string
+  email?: string
+  address?: string
+}
+
+export interface CreatePatientInput {
+  name: string
+  species: string
+  sex?: string
+  isNeutered?: boolean
+  breed?: string
+  dateOfBirth?: string
+  color?: string
+  microchip?: string
 }

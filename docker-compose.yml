@@ -9,10 +9,13 @@ services:
       PORT: 3000
       HOST: 0.0.0.0
       CLINIC_SERVICE_URL: http://clinic-service:3001
+      SCHEDULING_SERVICE_URL: http://scheduling-service:3002
     ports:
       - "3000:3000"
     depends_on:
       clinic-service:
+        condition: service_healthy
+      scheduling-service:
         condition: service_healthy
     healthcheck:
       test:
@@ -106,6 +109,62 @@ services:
       timeout: 3s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
+
+  scheduling-db-init:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - >-
+        mysql -hmysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" -e
+        "CREATE DATABASE IF NOT EXISTS vetflow_scheduling;
+        GRANT ALL PRIVILEGES ON vetflow_scheduling.* TO '$${MYSQL_USER}'@'%';
+        FLUSH PRIVILEGES;"
+    restart: "no"
+
+  scheduling-service:
+    build:
+      context: .
+      dockerfile: apps/scheduling-service/Dockerfile
+    container_name: vetflow-scheduling-service
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      HOST: 0.0.0.0
+      CLINIC_SERVICE_URL: http://clinic-service:3001
+      DATABASE_HOST: mysql
+      DATABASE_PORT: 3306
+      DATABASE_USER: ${MYSQL_USER}
+      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
+      DATABASE_NAME: vetflow_scheduling
+      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/vetflow_scheduling
+      DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL: "true"
+    ports:
+      - "3002:3002"
+    depends_on:
+      scheduling-db-init:
+        condition: service_completed_successfully
+      clinic-service:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3002/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
     restart: unless-stopped
 
 volumes:
