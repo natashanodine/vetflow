@@ -51,11 +51,24 @@ export async function getSession(): Promise<Session | null> {
   return response.json() as Promise<Session>
 }
 
+/** Statuses a sleeping or still-starting backend answers with. */
+const WAKING_STATUSES = new Set([502, 503, 504])
+
 export async function login(email: string, password: string) {
-  const response = await fetch(`${identityApiBase}/auth/login`, {
-    ...jsonRequest('POST', { email, password }),
-    credentials: 'same-origin',
-  })
+  const attempt = () =>
+    fetch(`${identityApiBase}/auth/login`, {
+      ...jsonRequest('POST', { email, password }),
+      credentials: 'same-origin',
+    })
+
+  let response = await attempt()
+  // The services may have gone back to sleep since the page loaded: wake
+  // them and try again instead of showing an error.
+  for (let retry = 0; retry < 2 && WAKING_STATUSES.has(response.status); retry++) {
+    await wakeServices()
+    response = await attempt()
+  }
+
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       message?: string

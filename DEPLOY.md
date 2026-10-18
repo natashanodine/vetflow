@@ -8,7 +8,7 @@
 | Uploaded files                  | Cloudflare R2            | Free up to 10 GB             |
 
 ```
-Browser ──> Cloudflare Worker (equora.<you>.workers.dev)
+Browser ──> Cloudflare Worker (vetflow.<you>.workers.dev)
               ├── pages, scripts, images  (served by Cloudflare)
               └── /api/*  ──> equora-gateway.onrender.com
                                 ├── equora-identity    ─┐
@@ -120,12 +120,13 @@ alert** with a threshold of $1. It only notifies; it doesn't stop anything.
 1. In the Cloudflare dashboard: **Workers & Pages → Create → Import a
    repository** and pick `vetflow`.
 2. Build settings:
-   - **Project name:** `equora`
+   - **Project name:** `vetflow` (must match `name` in `apps/web/wrangler.jsonc`)
    - **Root directory:** leave empty (the repo root)
    - **Build command:** `npm ci && npm run build --workspace=@vetflow/web`
    - **Deploy command:** `npx wrangler deploy --config apps/web/wrangler.jsonc`
-3. **Deploy.** When it finishes, the site is at
-   `https://equora.<your-subdomain>.workers.dev`.
+3. **Deploy.** Then open **Settings → Domains & Routes** and switch on the
+   **Production** `workers.dev` address. The site is at
+   `https://vetflow.<your-subdomain>.workers.dev`.
 4. Open it, click **Staff sign in**, and use the admin email and password from
    step 4. Then add the rest of the team on the **Team** page.
 

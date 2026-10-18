@@ -113,10 +113,16 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={isPending || isWaking}
+            disabled={isPending || isLoading}
             className="w-full rounded-xl bg-[#174f45] px-5 py-3.5 font-bold text-white transition hover:bg-[#103e36] disabled:cursor-wait disabled:opacity-60"
           >
-            {isPending ? 'Signing in…' : isWaking ? 'Starting up…' : 'Sign in securely'}
+            {isPending
+              ? 'Signing in…'
+              : isWaking
+                ? 'Starting up…'
+                : isLoading
+                  ? 'Connecting…'
+                  : 'Sign in securely'}
           </button>
         </form>
       </div>

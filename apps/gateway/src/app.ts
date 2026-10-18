@@ -42,6 +42,16 @@ export function buildApp() {
           ...headers,
           ...trustedHeaders(request),
         }),
+        // A service that is down or still waking up (free hosting) is a
+        // temporary condition: answer 503/504 so the web app waits and
+        // retries, instead of a generic 500.
+        onError: (reply, { error }) => {
+          const timedOut = (error as { statusCode?: number }).statusCode === 504
+          reply.log.warn({ error, upstream: service.upstream }, 'Upstream service unavailable')
+          void reply.status(timedOut ? 504 : 503).send({
+            message: 'The clinic system is starting up. Please try again in a moment.',
+          })
+        },
       },
     })
   }

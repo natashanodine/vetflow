@@ -3,7 +3,7 @@
 // locally with: npm run deploy --workspace=@vetflow/web
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "equora",
+  "name": "vetflow",
   "compatibility_date": "2026-10-01",
   "main": "./worker/index.js",
   "assets": {
