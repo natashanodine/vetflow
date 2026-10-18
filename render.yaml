@@ -90,6 +90,10 @@ services:
       # Uploaded files go to Cloudflare R2.
       - key: R2_BUCKET
         value: equora-files
+      # Uploads are refused once all files together reach this size, keeping
+      # R2 inside its free 10 GB (Cloudflare itself has no spending cap).
+      - key: STORAGE_LIMIT_GB
+        value: "9"
       - key: R2_ACCOUNT_ID
         sync: false
       - key: R2_ACCESS_KEY_ID

@@ -71,6 +71,19 @@ Each service keeps its own database inside this cluster (`vetflow_identity`,
    **Account ID** (shown on the R2 overview page). Keep them for step 4.
    The secret is only shown once.
 
+### Staying inside the free tier
+
+Cloudflare has no switch that stops R2 at the free limit, so the app enforces
+one itself: once all uploaded files together reach **9 GB**, new uploads are
+refused with "File storage is full" until some files are deleted. Change it
+with `STORAGE_LIMIT_GB` on `equora-clinic` in Render. Each file is also capped
+at 15 MB, and images are shrunk in the browser before upload.
+
+The other two free allowances (1 million uploads and 10 million file views a
+month) are far beyond what a clinic uses. For extra peace of mind, add an
+email alert: **Manage Account → Billing → Billable Usage → Create budget
+alert** with a threshold of $1. It only notifies; it doesn't stop anything.
+
 ## 4. Deploy the backend (Render)
 
 1. Sign up at https://render.com with your GitHub account.

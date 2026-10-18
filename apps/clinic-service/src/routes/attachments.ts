@@ -10,6 +10,22 @@ import { deleteFile, openFile, saveFile } from '../lib/storage.js'
 /** Upload limit per file. Keep in sync with the web app and nginx/gateway limits. */
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 
+/**
+ * Total space all uploads together may use. Defaults to 9 GB so the clinic
+ * stays inside Cloudflare R2's free 10 GB; set STORAGE_LIMIT_GB to change it.
+ */
+function storageLimitBytes() {
+  const gigabytes = Number(process.env.STORAGE_LIMIT_GB ?? 9)
+  return (Number.isFinite(gigabytes) && gigabytes > 0 ? gigabytes : 9) * 1024 ** 3
+}
+
+async function storedBytes() {
+  const [result] = await Attachment.aggregate<{ total: number }>([
+    { $group: { _id: null, total: { $sum: '$sizeBytes' } } },
+  ])
+  return result?.total ?? 0
+}
+
 const signatures: Record<string, (bytes: Uint8Array) => boolean> = {
   'application/pdf': (b) =>
     b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46, // %PDF
@@ -134,6 +150,13 @@ export const attachmentRoutes: FastifyPluginAsync = async (app) => {
         return reply
           .status(415)
           .send({ message: 'Only PDF, JPG, PNG and WebP files can be uploaded.' })
+      }
+
+      if ((await storedBytes()) + data.length > storageLimitBytes()) {
+        return reply.status(507).send({
+          message:
+            'File storage is full. Delete files you no longer need before uploading more.',
+        })
       }
 
       if (appointmentId) {
