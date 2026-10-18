@@ -1,0 +1,23 @@
+// Cloudflare Worker that hosts the Equora website and forwards /api to Render.
+// Deploy from the repo with Cloudflare Workers Builds (see DEPLOY.md), or
+// locally with: npm run deploy --workspace=@vetflow/web
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "equora",
+  "compatibility_date": "2026-10-01",
+  "main": "./worker/index.js",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Any page that isn't a file loads the React app (e.g. /app/patients).
+    "not_found_handling": "single-page-application",
+    // Only API calls run the Worker; everything else is served as static files.
+    "run_worker_first": ["/api/*"]
+  },
+  "vars": {
+    // The Render URL of the gateway service. Change it if Render gave your
+    // service a different address.
+    "API_ORIGIN": "https://equora-gateway.onrender.com"
+  },
+  "observability": { "enabled": true }
+}

@@ -1,0 +1,117 @@
+# Render Blueprint for the Equora backend (4 services on the free plan).
+# In Render: New + → Blueprint → pick this repo. See DEPLOY.md for the steps.
+#
+# Free services sleep after 15 minutes without traffic and can't use Render's
+# private network, so they reach each other over HTTPS using the URLs in the
+# equora-shared group, protected by the shared INTERNAL_API_TOKEN.
+
+envVarGroups:
+  - name: equora-shared
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: INTERNAL_API_TOKEN
+        generateValue: true
+      # If Render gives a service a different address (shown on its page),
+      # update the matching URL here and in apps/web/wrangler.jsonc.
+      - key: IDENTITY_SERVICE_URL
+        value: https://equora-identity.onrender.com
+      - key: CLINIC_SERVICE_URL
+        value: https://equora-clinic.onrender.com
+      - key: SCHEDULING_SERVICE_URL
+        value: https://equora-scheduling.onrender.com
+
+services:
+  - type: web
+    name: equora-gateway
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./apps/gateway/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - apps/gateway/**
+        - package-lock.json
+    envVars:
+      - fromGroup: equora-shared
+
+  - type: web
+    name: equora-identity
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./apps/identity-service/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - apps/identity-service/**
+        - package-lock.json
+    envVars:
+      - fromGroup: equora-shared
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: vetflow_identity
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: INITIAL_CLINIC_NAME
+        value: Equora
+      # First admin account, created on the first start only.
+      - key: INITIAL_ADMIN_NAME
+        sync: false
+      - key: INITIAL_ADMIN_EMAIL
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+
+  - type: web
+    name: equora-clinic
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./apps/clinic-service/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - apps/clinic-service/**
+        - package-lock.json
+    envVars:
+      - fromGroup: equora-shared
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: vetflow_clinic
+      # Uploaded files go to Cloudflare R2.
+      - key: R2_BUCKET
+        value: equora-files
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+
+  - type: web
+    name: equora-scheduling
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./apps/scheduling-service/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - apps/scheduling-service/**
+        - package-lock.json
+    envVars:
+      - fromGroup: equora-shared
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: vetflow_scheduling

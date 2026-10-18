@@ -1,3 +1,4 @@
+import { request } from './http'
 import type {
   Appointment,
   CreateAppointmentInput,
@@ -6,26 +7,20 @@ import type {
 
 const scheduleApiBase = '/api/schedule'
 
-async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${scheduleApiBase}${path}`, init)
-
-  if (!response.ok) {
-    const errorBody = (await response.json().catch(() => null)) as {
-      message?: string
-    } | null
-    throw new Error(
-      errorBody?.message ?? `Request failed with status ${response.status}`,
-    )
-  }
-
-  return response.json() as Promise<T>
+function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  return request<T>(`${scheduleApiBase}${path}`, init)
 }
 
 export function getAppointments(options?: {
   from?: Date
   to?: Date
+  patientId?: string
 }): Promise<Appointment[]> {
   const searchParams = new URLSearchParams()
+
+  if (options?.patientId) {
+    searchParams.set('patientId', options.patientId)
+  }
 
   if (options?.from) {
     searchParams.set('from', options.from.toISOString())

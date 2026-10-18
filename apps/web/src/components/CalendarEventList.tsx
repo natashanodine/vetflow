@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { CalendarEvent } from '../data/calendarEvents'
 import { fromDateKey } from '../data/calendarEvents'
 
@@ -30,9 +31,12 @@ export default function CalendarEventList({
         <article key={event.id} className="py-4 first:pt-0 last:pb-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="font-semibold text-slate-900">
+              <Link
+                to={`/app/patients/${event.patientId}`}
+                className="font-semibold text-slate-900 hover:text-teal-700 hover:underline"
+              >
                 {event.patientName}
-              </p>
+              </Link>
               <p className="text-sm font-medium text-slate-700">
                 {event.title}
               </p>

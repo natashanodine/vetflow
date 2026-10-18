@@ -4,15 +4,18 @@ import {
   createPatient,
   getOwners,
   getPatients,
+  uploadAttachment,
 } from '../api/clinic'
 import { createAppointment } from '../api/schedule'
 import type { Owner, Patient } from '../types/clinic'
 import type { Appointment } from '../types/schedule'
+import { ACCEPTED_FILES, formatBytes, prepareFile } from '../utils/files'
 
 interface AppointmentFormProps {
   initialDate?: string
   onCancel: () => void
-  onCreated: (appointment: Appointment) => void
+  /** `uploadWarning` is set when the appointment was saved but a file wasn't. */
+  onCreated: (appointment: Appointment, uploadWarning?: string) => void
 }
 
 type RecordMode = 'EXISTING' | 'NEW'
@@ -39,6 +42,8 @@ export default function AppointmentForm({
   const [isLoadingRecords, setIsLoadingRecords] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [files, setFiles] = useState<File[]>([])
+  const [submitStep, setSubmitStep] = useState<string | null>(null)
 
   useEffect(() => {
     let isActive = true
@@ -76,6 +81,29 @@ export default function AppointmentForm({
     const form = new FormData(event.currentTarget)
 
     try {
+      const startsAt = new Date(
+        `${requiredValue(form, 'appointmentDate')}T${requiredValue(form, 'appointmentTime')}:00`,
+      )
+      if (startsAt.getTime() < Date.now()) {
+        throw new Error('Choose a date and time in the future.')
+      }
+
+      // Check and resize files first so a bad file never leaves a
+      // half-created appointment behind.
+      setSubmitStep(files.length > 0 ? 'Preparing files…' : null)
+      const preparedFiles: File[] = []
+      for (const file of files) {
+        try {
+          preparedFiles.push(await prepareFile(file))
+        } catch (fileError) {
+          throw new Error(
+            `${file.name}: ${fileError instanceof Error ? fileError.message : 'This file cannot be uploaded.'}`,
+            { cause: fileError },
+          )
+        }
+      }
+      setSubmitStep(null)
+
       let patientId = String(form.get('patientId') ?? '')
 
       if (patientMode === 'NEW') {
@@ -136,15 +164,11 @@ export default function AppointmentForm({
         throw new Error('Select or create a patient')
       }
 
-      const appointmentDate = requiredValue(form, 'appointmentDate')
-      const appointmentTime = requiredValue(form, 'appointmentTime')
       const details = optionalValue(form, 'details')
       const appointment = await createAppointment({
         patientId,
         title: requiredValue(form, 'title'),
-        startsAt: new Date(
-          `${appointmentDate}T${appointmentTime}:00`,
-        ).toISOString(),
+        startsAt: startsAt.toISOString(),
         durationMinutes: Number(requiredValue(form, 'durationMinutes')),
         category: requiredValue(
           form,
@@ -153,7 +177,27 @@ export default function AppointmentForm({
         ...(details && { details }),
       })
 
-      onCreated(appointment)
+      const failedUploads: string[] = []
+      for (const [index, file] of preparedFiles.entries()) {
+        setSubmitStep(`Uploading file ${index + 1} of ${preparedFiles.length}…`)
+        try {
+          await uploadAttachment(patientId, {
+            file,
+            appointmentId: appointment.id,
+          })
+        } catch (uploadError) {
+          failedUploads.push(
+            `${file.name} (${uploadError instanceof Error ? uploadError.message : 'upload failed'})`,
+          )
+        }
+      }
+
+      onCreated(
+        appointment,
+        failedUploads.length > 0
+          ? `The appointment was saved, but ${failedUploads.length === 1 ? 'this file was' : 'these files were'} not uploaded: ${failedUploads.join('; ')}. You can add ${failedUploads.length === 1 ? 'it' : 'them'} from the appointment details.`
+          : undefined,
+      )
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -162,6 +206,7 @@ export default function AppointmentForm({
       )
     } finally {
       setIsSubmitting(false)
+      setSubmitStep(null)
     }
   }
 
@@ -370,6 +415,7 @@ export default function AppointmentForm({
               name="appointmentDate"
               type="date"
               required
+              min={localDateKey(new Date())}
               defaultValue={defaultAppointmentDate(initialDate)}
               className={inputStyles}
             />
@@ -407,6 +453,62 @@ export default function AppointmentForm({
             className={inputStyles}
           />
         </Field>
+
+        <div>
+          <span className="mb-1.5 block text-sm font-semibold text-slate-700">
+            Files <span className="font-normal text-slate-400">(optional)</span>
+          </span>
+          <label className="flex cursor-pointer flex-wrap items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600 hover:border-teal-400 hover:bg-teal-50/40">
+            <span className="rounded-md bg-white px-3 py-1.5 font-semibold text-slate-700 shadow-sm ring-1 ring-slate-200">
+              Add files
+            </span>
+            <span>
+              Lab results, X-rays or photos. They will be saved to the
+              patient&apos;s documents and linked to this appointment.
+            </span>
+            <input
+              type="file"
+              multiple
+              accept={ACCEPTED_FILES}
+              className="sr-only"
+              onChange={(changeEvent) => {
+                const selected = Array.from(changeEvent.target.files ?? [])
+                setFiles((current) => [...current, ...selected])
+                changeEvent.target.value = ''
+              }}
+            />
+          </label>
+
+          {files.length > 0 && (
+            <ul className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+              {files.map((file, index) => (
+                <li
+                  key={`${file.name}-${index}`}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                >
+                  <span className="min-w-0 truncate text-slate-700">
+                    {file.name}{' '}
+                    <span className="text-slate-400">
+                      · {formatBytes(file.size)}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFiles((current) =>
+                        current.filter((_, fileIndex) => fileIndex !== index),
+                      )
+                    }
+                    aria-label={`Remove ${file.name}`}
+                    className="text-xs font-semibold text-slate-500 hover:text-red-700 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </fieldset>
 
       <div className="flex justify-end gap-3 border-t border-slate-200 pt-5">
@@ -422,7 +524,7 @@ export default function AppointmentForm({
           disabled={isLoadingRecords || isSubmitting}
           className="rounded-lg bg-teal-600 px-5 py-2 font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isSubmitting ? 'Saving…' : 'Save appointment'}
+          {isSubmitting ? (submitStep ?? 'Saving…') : 'Save appointment'}
         </button>
       </div>
     </form>

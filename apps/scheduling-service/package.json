@@ -5,17 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "typecheck": "prisma generate && tsc --noEmit",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/adapter-mariadb": "^7.10.0",
-    "@prisma/client": "^7.10.0",
+    "dotenv": "^17.4.2",
     "fastify": "^5.12.1",
-    "prisma": "^7.10.0"
+    "mongoose": "9.10.3"
   },
   "devDependencies": {
     "@types/node": "^26.4.0",

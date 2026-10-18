@@ -7,6 +7,7 @@ export type CalendarEventStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
 
 export interface CalendarEvent {
   id: string
+  patientId: string
   patientName: string
   title: string
   details: string
@@ -19,6 +20,7 @@ export interface CalendarEvent {
 
 interface AppointmentCalendarSource {
   id: string
+  patientId: string
   patientName: string
   title: string
   details: string | null
@@ -71,6 +73,7 @@ export function appointmentToCalendarEvent(
 
   return {
     id: appointment.id,
+    patientId: appointment.patientId,
     patientName: appointment.patientName,
     title: appointment.title,
     details: appointment.details ?? 'No additional details.',

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { getPatients } from '../api/clinic'
 import { updateAppointment } from '../api/schedule'
+import AttachmentsPanel from './AttachmentsPanel'
 import type { CalendarEvent } from '../data/calendarEvents'
 import type { Patient } from '../types/clinic'
 import type { Appointment } from '../types/schedule'
@@ -31,6 +33,10 @@ export default function AppointmentDetailsModal({
   onUpdated,
 }: AppointmentDetailsModalProps) {
   const [isEditing, setIsEditing] = useState(false)
+  // Controlled so the choice survives the patient list loading in later.
+  const [selectedPatientId, setSelectedPatientId] = useState(
+    appointment.patientId,
+  )
   const [patients, setPatients] = useState<Patient[]>([])
   const [isLoadingPatients, setIsLoadingPatients] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -87,13 +93,19 @@ export default function AppointmentDetailsModal({
         'status',
       ) as CalendarEvent['status']
 
+      const startsAt = new Date(`${appointmentDate}T${appointmentTime}:00`)
+      const toMinute = (date: Date) => Math.floor(date.getTime() / 60_000)
+      const isRescheduled =
+        toMinute(startsAt) !== toMinute(new Date(appointment.startsAt))
+      if (isRescheduled && startsAt.getTime() < Date.now()) {
+        throw new Error('Choose a date and time in the future.')
+      }
+
       const updatedAppointment = await updateAppointment(appointment.id, {
         patientId: requiredValue(form, 'patientId'),
         title,
         details,
-        startsAt: new Date(
-          `${appointmentDate}T${appointmentTime}:00`,
-        ).toISOString(),
+        startsAt: startsAt.toISOString(),
         durationMinutes,
         category,
         status,
@@ -113,6 +125,7 @@ export default function AppointmentDetailsModal({
   }
 
   const dateTime = localDateAndTime(new Date(appointment.startsAt))
+  const todayKey = localDateAndTime(new Date()).date
 
   return (
     <div
@@ -163,7 +176,10 @@ export default function AppointmentDetailsModal({
                   <select
                     name="patientId"
                     required
-                    defaultValue={appointment.patientId}
+                    value={selectedPatientId}
+                    onChange={(changeEvent) =>
+                      setSelectedPatientId(changeEvent.target.value)
+                    }
                     disabled={isLoadingPatients || isSaving}
                     className={inputStyles}
                   >
@@ -220,6 +236,9 @@ export default function AppointmentDetailsModal({
                     name="appointmentDate"
                     type="date"
                     required
+                    min={
+                      dateTime.date >= todayKey ? todayKey : undefined
+                    }
                     defaultValue={dateTime.date}
                     disabled={isSaving}
                     className={inputStyles}
@@ -300,7 +319,19 @@ export default function AppointmentDetailsModal({
               </div>
 
               <dl className="mt-6 grid gap-5 sm:grid-cols-2">
-                <Detail label="Patient" value={event.patientName} />
+                <div>
+                  <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Patient
+                  </dt>
+                  <dd className="mt-1">
+                    <Link
+                      to={`/app/patients/${appointment.patientId}`}
+                      className="font-semibold text-teal-700 hover:text-teal-900 hover:underline"
+                    >
+                      {appointment.patientName} →
+                    </Link>
+                  </dd>
+                </div>
                 <Detail
                   label="Date and time"
                   value={formatDateAndTime(event.date, event.time)}
@@ -329,6 +360,15 @@ export default function AppointmentDetailsModal({
                 <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
                   {event.details || 'No additional details.'}
                 </p>
+              </div>
+
+              <div className="mt-6">
+                <AttachmentsPanel
+                  patientId={appointment.patientId}
+                  appointmentId={appointment.id}
+                  title="Files"
+                  compact
+                />
               </div>
 
               <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-5">

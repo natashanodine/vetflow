@@ -1,9 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify'
-import { prisma } from '../lib/prisma.js'
+import { pingDatabase } from '../lib/db.js'
 
 export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get('/health', async () => {
-    await prisma.owner.count()
+    await pingDatabase()
 
     return {
       status: 'ok',

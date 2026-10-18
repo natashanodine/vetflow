@@ -10,12 +10,16 @@ services:
       HOST: 0.0.0.0
       CLINIC_SERVICE_URL: http://clinic-service:3001
       SCHEDULING_SERVICE_URL: http://scheduling-service:3002
+      IDENTITY_SERVICE_URL: http://identity-service:3003
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
     ports:
       - "3000:3000"
     depends_on:
       clinic-service:
         condition: service_healthy
       scheduling-service:
+        condition: service_healthy
+      identity-service:
         condition: service_healthy
     healthcheck:
       test:
@@ -53,29 +57,25 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  mysql:
-    image: mysql:8.4
-    container_name: vetflow-mysql
+  mongo:
+    image: mongo:8.0
+    container_name: vetflow-mongo
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:?Set MONGO_ROOT_USERNAME in .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Set MONGO_ROOT_PASSWORD in .env}
     ports:
-      - "${MYSQL_HOST_PORT:-3307}:3306"
+      # Connect from your Mac (for example with MongoDB Compass) on this port.
+      - "${MONGO_HOST_PORT:-27018}:27017"
     volumes:
-      - mysql-data:/var/lib/mysql
+      - mongo-data:/data/db
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD} --silent"
-        ]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
       interval: 5s
       timeout: 5s
       retries: 10
       start_period: 20s
     restart: unless-stopped
+
   clinic-service:
     build:
       context: .
@@ -85,17 +85,17 @@ services:
       NODE_ENV: development
       PORT: 3001
       HOST: 0.0.0.0
-      DATABASE_HOST: mysql
-      DATABASE_PORT: 3306
-      DATABASE_USER: ${MYSQL_USER}
-      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
-      DATABASE_NAME: ${MYSQL_DATABASE}
-      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
-      DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL: "true"
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/vetflow_clinic?authSource=admin
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
+      IDENTITY_SERVICE_URL: http://identity-service:3003
+      SCHEDULING_SERVICE_URL: http://scheduling-service:3002
+      UPLOADS_DIR: /data/uploads
+    volumes:
+      - clinic-uploads:/data/uploads
     ports:
       - "3001:3001"
     depends_on:
-      mysql:
+      mongo:
         condition: service_healthy
     healthcheck:
       test:
@@ -111,24 +111,6 @@ services:
       start_period: 10s
     restart: unless-stopped
 
-  scheduling-db-init:
-    image: mysql:8.4
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_USER: ${MYSQL_USER}
-    depends_on:
-      mysql:
-        condition: service_healthy
-    command:
-      - sh
-      - -c
-      - >-
-        mysql -hmysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" -e
-        "CREATE DATABASE IF NOT EXISTS vetflow_scheduling;
-        GRANT ALL PRIVILEGES ON vetflow_scheduling.* TO '$${MYSQL_USER}'@'%';
-        FLUSH PRIVILEGES;"
-    restart: "no"
-
   scheduling-service:
     build:
       context: .
@@ -139,18 +121,13 @@ services:
       PORT: 3002
       HOST: 0.0.0.0
       CLINIC_SERVICE_URL: http://clinic-service:3001
-      DATABASE_HOST: mysql
-      DATABASE_PORT: 3306
-      DATABASE_USER: ${MYSQL_USER}
-      DATABASE_PASSWORD: ${MYSQL_PASSWORD}
-      DATABASE_NAME: vetflow_scheduling
-      DATABASE_URL: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/vetflow_scheduling
-      DATABASE_ALLOW_PUBLIC_KEY_RETRIEVAL: "true"
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/vetflow_scheduling?authSource=admin
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
     ports:
       - "3002:3002"
     depends_on:
-      scheduling-db-init:
-        condition: service_completed_successfully
+      mongo:
+        condition: service_healthy
       clinic-service:
         condition: service_healthy
     healthcheck:
@@ -167,5 +144,45 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  identity-service:
+    build:
+      context: .
+      dockerfile: apps/identity-service/Dockerfile
+    container_name: vetflow-identity-service
+    environment:
+      NODE_ENV: development
+      PORT: 3003
+      HOST: 0.0.0.0
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/vetflow_identity?authSource=admin
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      # Set to "true" once the site is served over HTTPS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # Used only on first start, to create the clinic and its first admin.
+      INITIAL_CLINIC_NAME: ${INITIAL_CLINIC_NAME:-Equora}
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-Clinic Administrator}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:-}
+    ports:
+      - "3003:3003"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3003/health').then(response => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
 volumes:
-  mysql-data:
+  mongo-data:
+  # Uploaded documents and images (clinic-service).
+  clinic-uploads:

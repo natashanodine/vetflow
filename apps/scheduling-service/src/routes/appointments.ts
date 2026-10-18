@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify'
-import { prisma } from '../lib/prisma.js'
+import { Appointment, serializeAppointment } from '../models/index.js'
 
 type AppointmentCategory = 'APPOINTMENT' | 'TREATMENT' | 'REPRODUCTION'
 type AppointmentStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
@@ -7,6 +7,20 @@ type AppointmentStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
 interface AppointmentQuery {
   from?: string
   to?: string
+  patientId?: string
+}
+
+// Allow a minute of clock drift between the browser and the server.
+const PAST_GRACE_MS = 60_000
+
+function isInPast(date: Date) {
+  return date.getTime() < Date.now() - PAST_GRACE_MS
+}
+
+const toMinute = (date: Date) => Math.floor(date.getTime() / 60_000)
+
+function clinicHeaders() {
+  return { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' }
 }
 
 interface CreateAppointmentBody {
@@ -49,28 +63,26 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
           properties: {
             from: { type: 'string', format: 'date-time' },
             to: { type: 'string', format: 'date-time' },
+            patientId: { type: 'string', minLength: 36, maxLength: 36 },
           },
         },
       },
     },
     async (request) => {
-      const { from, to } = request.query
+      const { from, to, patientId } = request.query
 
-      return prisma.appointment.findMany({
-        ...(from || to
-          ? {
-              where: {
-                startsAt: {
-                  ...(from && { gte: new Date(from) }),
-                  ...(to && { lte: new Date(to) }),
-                },
-              },
-            }
-          : {}),
-        orderBy: {
-          startsAt: 'asc',
-        },
+      const appointments = await Appointment.find({
+        ...(patientId && { patientId }),
+        ...((from || to) && {
+          startsAt: {
+            ...(from && { $gte: new Date(from) }),
+            ...(to && { $lte: new Date(to) }),
+          },
+        }),
       })
+        .sort({ startsAt: 1 })
+        .lean()
+      return appointments.map(serializeAppointment)
     },
   )
 
@@ -89,15 +101,15 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
-      const appointment = await prisma.appointment.findUnique({
-        where: { id: request.params.appointmentId },
-      })
+      const appointment = await Appointment.findById(
+        request.params.appointmentId,
+      ).lean()
 
       if (!appointment) {
         return reply.status(404).send({ message: 'Appointment not found' })
       }
 
-      return appointment
+      return serializeAppointment(appointment)
     },
   )
 
@@ -126,8 +138,15 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const clinicServiceUrl =
         process.env.CLINIC_SERVICE_URL ?? 'http://localhost:3001'
+      if (isInPast(new Date(request.body.startsAt))) {
+        return reply
+          .status(400)
+          .send({ message: 'Appointments cannot be booked in the past.' })
+      }
+
       const patientResponse = await fetch(
         `${clinicServiceUrl}/patients/${request.body.patientId}`,
+        { headers: clinicHeaders() },
       )
 
       if (patientResponse.status === 404) {
@@ -147,20 +166,18 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
       const patient = (await patientResponse.json()) as ClinicPatient
       const body = request.body
 
-      const appointment = await prisma.appointment.create({
-        data: {
-          patientId: patient.id,
-          patientName: patient.name,
-          ownerId: patient.ownerId,
-          title: body.title,
-          startsAt: new Date(body.startsAt),
-          durationMinutes: body.durationMinutes ?? 30,
-          category: body.category ?? 'APPOINTMENT',
-          ...(body.details !== undefined && { details: body.details }),
-        },
+      const appointment = await Appointment.create({
+        patientId: patient.id,
+        patientName: patient.name,
+        ownerId: patient.ownerId,
+        title: body.title,
+        startsAt: new Date(body.startsAt),
+        durationMinutes: body.durationMinutes ?? 30,
+        category: body.category ?? 'APPOINTMENT',
+        ...(body.details !== undefined && { details: body.details }),
       })
 
-      return reply.status(201).send(appointment)
+      return reply.status(201).send(serializeAppointment(appointment.toObject()))
     },
   )
 
@@ -199,12 +216,23 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
-      const existingAppointment = await prisma.appointment.findUnique({
-        where: { id: request.params.appointmentId },
-      })
+      const existingAppointment = await Appointment.findById(
+        request.params.appointmentId,
+      ).lean()
 
       if (!existingAppointment) {
         return reply.status(404).send({ message: 'Appointment not found' })
+      }
+
+      if (request.body.startsAt !== undefined) {
+        const startsAt = new Date(request.body.startsAt)
+        const isRescheduled =
+          toMinute(startsAt) !== toMinute(existingAppointment.startsAt)
+        if (isRescheduled && isInPast(startsAt)) {
+          return reply
+            .status(400)
+            .send({ message: 'Appointments cannot be moved into the past.' })
+        }
       }
 
       let patient: ClinicPatient | undefined
@@ -217,6 +245,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
           process.env.CLINIC_SERVICE_URL ?? 'http://localhost:3001'
         const patientResponse = await fetch(
           `${clinicServiceUrl}/patients/${request.body.patientId}`,
+          { headers: clinicHeaders() },
         )
 
         if (patientResponse.status === 404) {
@@ -235,28 +264,68 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const body = request.body
-      const appointment = await prisma.appointment.update({
-        where: { id: request.params.appointmentId },
-        data: {
-          ...(patient && {
-            patientId: patient.id,
-            patientName: patient.name,
-            ownerId: patient.ownerId,
-          }),
-          ...(body.title !== undefined && { title: body.title }),
-          ...(body.details !== undefined && { details: body.details }),
-          ...(body.startsAt !== undefined && {
-            startsAt: new Date(body.startsAt),
-          }),
-          ...(body.durationMinutes !== undefined && {
-            durationMinutes: body.durationMinutes,
-          }),
-          ...(body.category !== undefined && { category: body.category }),
-          ...(body.status !== undefined && { status: body.status }),
+      const appointment = await Appointment.findByIdAndUpdate(
+        existingAppointment._id,
+        {
+          $set: {
+            ...(patient && {
+              patientId: patient.id,
+              patientName: patient.name,
+              ownerId: patient.ownerId,
+            }),
+            ...(body.title !== undefined && { title: body.title }),
+            ...(body.details !== undefined && { details: body.details }),
+            ...(body.startsAt !== undefined && {
+              startsAt: new Date(body.startsAt),
+            }),
+            ...(body.durationMinutes !== undefined && {
+              durationMinutes: body.durationMinutes,
+            }),
+            ...(body.category !== undefined && { category: body.category }),
+            ...(body.status !== undefined && { status: body.status }),
+          },
         },
-      })
+        { new: true, runValidators: true },
+      ).lean()
 
-      return appointment
+      if (!appointment) {
+        return reply.status(404).send({ message: 'Appointment not found' })
+      }
+
+      return serializeAppointment(appointment)
+    },
+  )
+
+  /** Called by clinic-service when a patient's name or owner changes. */
+  app.patch<{
+    Params: { patientId: string }
+    Body: { patientName?: string; ownerId?: string }
+  }>(
+    '/internal/patients/:patientId',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            patientName: { type: 'string', minLength: 1, maxLength: 100 },
+            ownerId: { type: 'string', minLength: 36, maxLength: 36 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { patientName, ownerId } = request.body
+      const result = await Appointment.updateMany(
+        { patientId: request.params.patientId },
+        {
+          $set: {
+            ...(patientName !== undefined && { patientName }),
+            ...(ownerId !== undefined && { ownerId }),
+          },
+        },
+      )
+      return { updated: result.modifiedCount }
     },
   )
 }

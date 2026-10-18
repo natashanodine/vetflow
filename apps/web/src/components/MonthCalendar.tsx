@@ -75,7 +75,7 @@ export default function MonthCalendar({
           </div>
           {onDateSelect && (
             <p className="mt-2 text-xs font-medium text-teal-700">
-              Select any day to add an appointment.
+              Select today or a future day to add an appointment.
             </p>
           )}
         </div>
@@ -127,14 +127,17 @@ export default function MonthCalendar({
               const isCurrentMonth =
                 date.getMonth() === visibleMonth.getMonth()
               const isToday = dateKey === toDateKey(today)
+              const isPast = dateKey < toDateKey(today)
+              const canSelect = Boolean(onDateSelect) && !isPast
 
               return (
                 <div
                   key={dateKey}
-                  role={onDateSelect ? 'button' : undefined}
-                  tabIndex={onDateSelect ? 0 : undefined}
+                  role={canSelect ? 'button' : undefined}
+                  tabIndex={canSelect ? 0 : undefined}
+                  data-past={isPast || undefined}
                   aria-label={
-                    onDateSelect
+                    canSelect
                       ? `Add appointment on ${new Intl.DateTimeFormat(
                           undefined,
                           {
@@ -146,9 +149,12 @@ export default function MonthCalendar({
                         ).format(date)}`
                       : undefined
                   }
-                  onClick={() => onDateSelect?.(dateKey)}
+                  onClick={() => {
+                    if (canSelect) onDateSelect?.(dateKey)
+                  }}
                   onKeyDown={(event) => {
                     if (
+                      canSelect &&
                       onDateSelect &&
                       (event.key === 'Enter' || event.key === ' ')
                     ) {
@@ -156,10 +162,19 @@ export default function MonthCalendar({
                       onDateSelect(dateKey)
                     }
                   }}
+                  title={
+                    onDateSelect && isPast
+                      ? 'Past dates cannot be booked'
+                      : undefined
+                  }
                   className={`min-h-32 border-b border-r border-slate-100 p-2 text-left outline-none ${
-                    isCurrentMonth ? 'bg-white' : 'bg-slate-50/70'
+                    isPast && onDateSelect
+                      ? 'cursor-not-allowed bg-slate-100/80'
+                      : isCurrentMonth
+                        ? 'bg-white'
+                        : 'bg-slate-50/70'
                   } ${
-                    onDateSelect
+                    canSelect
                       ? 'cursor-pointer hover:bg-teal-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500'
                       : ''
                   }`}
@@ -168,7 +183,9 @@ export default function MonthCalendar({
                     className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
                       isToday
                         ? 'bg-teal-600 text-white'
-                        : isCurrentMonth
+                        : isPast && onDateSelect
+                          ? 'text-slate-300'
+                          : isCurrentMonth
                           ? 'text-slate-700'
                           : 'text-slate-400'
                     }`}

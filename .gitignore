@@ -11,4 +11,10 @@ dist/
 .DS_Store
 *.log
 
-**/src/generated/prisma/
+# Uploaded files when running services outside Docker
+uploads/
+**/uploads/
+
+# Cloudflare Wrangler local state
+.wrangler/
+**/.wrangler/
