@@ -1,13 +1,17 @@
 import type { FastifyBaseLogger } from 'fastify'
 import { hash } from 'bcryptjs'
 import { ClinicSettings, User } from '../models/index.js'
-import { normalizeEmail } from './users.js'
+import { assertEncryptionConfigured } from './encryption.js'
+import { encryptIdentity, normalizeEmail, prepareDatabase } from './users.js'
 
 /**
  * On a fresh install, creates the clinic settings and the first admin from
  * INITIAL_* environment variables. Does nothing once any user exists.
  */
 export async function bootstrap(log: FastifyBaseLogger) {
+  assertEncryptionConfigured()
+  await prepareDatabase(log)
+
   const clinicName = process.env.INITIAL_CLINIC_NAME?.trim() || 'Equora'
   await ClinicSettings.updateOne(
     { _id: 1 },
@@ -33,8 +37,7 @@ export async function bootstrap(log: FastifyBaseLogger) {
   }
 
   await User.create({
-    name,
-    email: normalizeEmail(email),
+    ...encryptIdentity({ name, email }),
     passwordHash: await hash(password, 12),
     role: 'ADMIN',
   })

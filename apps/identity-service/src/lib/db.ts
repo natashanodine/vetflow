@@ -11,14 +11,13 @@ export async function connectDatabase() {
   // MONGODB_DB_NAME lets several services share one connection string
   // (for example a MongoDB Atlas cluster), each with its own database.
   const dbName = process.env.MONGODB_DB_NAME
+  // Indexes are built by prepareDatabase() once older records have been
+  // converted, so an index can never fail on data from a previous version.
+  mongoose.set('autoIndex', false)
   await mongoose.connect(process.env.MONGODB_URI ?? DEFAULT_URI, {
     serverSelectionTimeoutMS: 10_000,
     ...(dbName && { dbName }),
   })
-  // Make sure unique indexes exist before accepting requests.
-  await Promise.all(
-    Object.values(mongoose.models).map((model) => model.init()),
-  )
 }
 
 export function disconnectDatabase() {

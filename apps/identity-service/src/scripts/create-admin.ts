@@ -8,7 +8,8 @@ import 'dotenv/config'
 import { hash } from 'bcryptjs'
 import { connectDatabase, disconnectDatabase } from '../lib/db.js'
 import { User } from '../models/index.js'
-import { normalizeEmail } from '../lib/users.js'
+import { assertEncryptionConfigured, emailIndex } from '../lib/encryption.js'
+import { encryptIdentity, normalizeEmail, prepareDatabase } from '../lib/users.js'
 
 const email = process.env.ADMIN_EMAIL?.trim()
 const password = process.env.ADMIN_PASSWORD
@@ -20,18 +21,21 @@ async function main() {
     throw new Error('ADMIN_PASSWORD must have at least 12 characters')
   }
 
+  assertEncryptionConfigured()
   await connectDatabase()
+  await prepareDatabase(console)
   const passwordHash = await hash(password, 12)
   const normalized = normalizeEmail(email)
   const existing = await User.findOneAndUpdate(
-    { email: normalized },
+    { emailHash: emailIndex(normalized) },
     {
-      $set: { passwordHash, role: 'ADMIN', isActive: true },
+      $set: { passwordHash, role: 'ADMIN', isActive: true, failedLoginCount: 0 },
+      $unset: { lockedUntil: '' },
       $inc: { sessionVersion: 1 },
     },
   )
   if (!existing) {
-    await User.create({ name, email: normalized, passwordHash, role: 'ADMIN' })
+    await User.create({ ...encryptIdentity({ name, email }), passwordHash, role: 'ADMIN' })
   }
   console.log(`Admin ready: ${normalized}`)
 }

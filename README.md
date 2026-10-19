@@ -29,7 +29,7 @@ See [DEPLOY.md](DEPLOY.md) for putting it online: the website on Cloudflare Work
 
 1. `cp .env.example .env`, then fill in:
    - `MONGO_ROOT_PASSWORD`: run `openssl rand -hex 16`.
-   - `SESSION_SECRET` and `INTERNAL_API_TOKEN`: run `openssl rand -hex 32` once for each.
+   - `SESSION_SECRET`, `INTERNAL_API_TOKEN` and `DATA_ENCRYPTION_KEY`: run `openssl rand -hex 32` once for each. Keep a safe copy of `DATA_ENCRYPTION_KEY`: names and emails in the database can't be read without it.
    - `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` (12+ characters): the first admin, created on first start.
 2. `docker compose up --build`
 3. Open http://localhost:5173 and sign in at **Staff sign in**.

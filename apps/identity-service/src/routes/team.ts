@@ -7,7 +7,8 @@ import { requireRequester } from '../lib/requester.js'
 import {
   byRoleThenName,
   countActiveAdmins,
-  normalizeEmail,
+  decryptUser,
+  encryptIdentity,
   serializeTeamMember,
 } from '../lib/users.js'
 
@@ -45,7 +46,10 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
     if (!requireRequester(request, reply, 'manageTeam')) return
 
     const users = await User.find().lean()
-    return users.sort(byRoleThenName).map(serializeTeamMember)
+    return users
+      .map((user) => decryptUser(user))
+      .sort(byRoleThenName)
+      .map(serializeTeamMember)
   })
 
   app.post<{ Body: CreateMemberBody }>(
@@ -72,13 +76,12 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
 
       try {
         const user = await User.create({
-          name: body.name.trim(),
-          email: normalizeEmail(body.email),
+          ...encryptIdentity({ name: body.name, email: body.email }),
           passwordHash: await hash(body.password, 12),
           role: body.role,
           isVeterinarian: body.role === 'ADMIN' && (body.isVeterinarian ?? false),
         })
-        return reply.status(201).send(serializeTeamMember(user.toObject()))
+        return reply.status(201).send(serializeTeamMember(decryptUser(user.toObject())))
       } catch (error) {
         if (isDuplicateKeyError(error)) {
           return reply
@@ -150,8 +153,10 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
       const nextRole = body.role ?? target.role
       try {
         const changes: Partial<UserDoc> = {
-          ...(body.name !== undefined && { name: body.name.trim() }),
-          ...(body.email !== undefined && { email: normalizeEmail(body.email) }),
+          ...encryptIdentity({
+            ...(body.name !== undefined && { name: body.name }),
+            ...(body.email !== undefined && { email: body.email }),
+          }),
           ...(body.role !== undefined && { role: body.role }),
           ...(body.isActive !== undefined && { isActive: body.isActive }),
           ...(body.isVeterinarian !== undefined && {
@@ -160,6 +165,8 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
           }),
           ...(body.password !== undefined && {
             passwordHash: await hash(body.password, 12),
+            // A reset by an admin also lifts any lock from failed sign-ins.
+            failedLoginCount: 0,
           }),
         }
         const user = await User.findByIdAndUpdate(
@@ -167,12 +174,15 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
           {
             $set: changes,
             // A new password signs the person out everywhere.
-            ...(body.password !== undefined && { $inc: { sessionVersion: 1 } }),
+            ...(body.password !== undefined && {
+              $inc: { sessionVersion: 1 },
+              $unset: { lockedUntil: '' },
+            }),
           },
           { new: true, runValidators: true },
         ).lean()
         if (!user) return reply.status(404).send({ message: 'User not found' })
-        return serializeTeamMember(user)
+        return serializeTeamMember(decryptUser(user))
       } catch (error) {
         if (isDuplicateKeyError(error)) {
           return reply

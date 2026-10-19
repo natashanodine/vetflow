@@ -57,6 +57,10 @@ services:
         value: vetflow_identity
       - key: SESSION_SECRET
         generateValue: true
+      # Encrypts names and emails in the database. Never change or delete it:
+      # data encrypted with it can't be read without it. Keep a copy safe.
+      - key: DATA_ENCRYPTION_KEY
+        generateValue: true
       - key: COOKIE_SECURE
         value: "true"
       - key: INITIAL_CLINIC_NAME

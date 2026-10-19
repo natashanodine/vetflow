@@ -1,4 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify'
+import { decryptText } from '../lib/encryption.js'
+import { userDirectory } from '../lib/users.js'
 import { User } from '../models/index.js'
 import { verifySessionToken } from '../lib/session.js'
 import { isVet } from '../lib/users.js'
@@ -21,7 +23,7 @@ export const internalRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
-      const payload = verifySessionToken(request.body.token)
+      const payload = await verifySessionToken(request.body.token)
       if (!payload) {
         return reply.status(401).send({ reason: 'signed-out' })
       }
@@ -36,7 +38,7 @@ export const internalRoutes: FastifyPluginAsync = async (app) => {
 
       return {
         id: user._id,
-        name: user.name,
+        name: decryptText(user.name),
         role: user.role,
         isVeterinarian: isVet(user),
       }
@@ -50,12 +52,12 @@ export const internalRoutes: FastifyPluginAsync = async (app) => {
       if (!user || !user.isActive || !isVet(user)) {
         return reply.status(404).send({ message: 'Not an active vet' })
       }
-      return { id: user._id, name: user.name }
+      return { id: user._id, name: decryptText(user.name) }
     },
   )
 
   app.get('/internal/users/directory', async () => {
-    const users = await User.find({}, { name: 1 }).lean()
+    const users = await userDirectory()
     return users.map((user) => ({ id: user._id, name: user.name }))
   })
 }

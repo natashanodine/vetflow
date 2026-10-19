@@ -156,6 +156,8 @@ services:
       MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/vetflow_identity?authSource=admin
       INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?Set INTERNAL_API_TOKEN in .env}
       SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      # Encrypts names and emails in the database. Never change or lose it.
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Set DATA_ENCRYPTION_KEY in .env}
       # Set to "true" once the site is served over HTTPS.
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       # Used only on first start, to create the clinic and its first admin.
