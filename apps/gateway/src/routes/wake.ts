@@ -1,7 +1,11 @@
 import type { FastifyPluginAsync } from 'fastify'
 
-/** Give up on waking the services after this long. */
-const WAKE_TIMEOUT_MS = 150_000
+/**
+ * Give up on waking the services after this long. Kept well under the ~100 s
+ * that hosting proxies allow a request to stay open, so the caller always
+ * gets an answer (and the list of services that didn't respond).
+ */
+const WAKE_TIMEOUT_MS = 60_000
 const RETRY_DELAY_MS = 2_000
 
 function serviceUrls() {

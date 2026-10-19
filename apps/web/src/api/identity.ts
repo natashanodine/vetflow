@@ -26,17 +26,24 @@ function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
  * do this after a quiet period). Resolves quickly when they are already up.
  */
 export async function wakeServices() {
-  const deadline = Date.now() + 180_000
+  // Never block the login page for longer than this; sign-in itself also
+  // retries, so it's safe to let the person try.
+  const deadline = Date.now() + 90_000
   while (Date.now() < deadline) {
     try {
       const response = await fetch('/api/wake', {
-        signal: AbortSignal.timeout(160_000),
+        signal: AbortSignal.timeout(Math.max(1_000, Math.min(75_000, deadline - Date.now()))),
       })
-      const body = (await response.json().catch(() => null)) as { ready?: boolean } | null
+      const body = (await response.json().catch(() => null)) as {
+        ready?: boolean
+        asleep?: string[]
+      } | null
       if (response.ok && body?.ready) return true
+      if (body?.asleep) console.warn('Services still starting:', body.asleep.join(', '))
     } catch {
       // The gateway itself may still be starting; try again shortly.
     }
+    if (Date.now() + 3_000 >= deadline) break
     await new Promise((resolve) => setTimeout(resolve, 3_000))
   }
   return false
