@@ -13,7 +13,7 @@ import {
   getTreatments,
   previewTreatment,
 } from '../api/schedule'
-import { CLOSED_DAY_MESSAGE, describeInterval, isWeekendKey } from '../lib/clinicCalendar'
+import { CLOSED_DAY_MESSAGE, describeTreatment, isWeekendKey } from '../lib/clinicCalendar'
 import type { Owner, Patient } from '../types/clinic'
 import type {
   Appointment,
@@ -508,9 +508,7 @@ export default function AppointmentForm({
               <option value="">No treatment: a single appointment</option>
               {treatments.map((treatment) => (
                 <option key={treatment.id} value={treatment.id}>
-                  {treatment.name} · {treatment.steps.length}{' '}
-                  {treatment.steps.length === 1 ? 'appointment' : 'appointments'},{' '}
-                  {describeInterval(treatment.intervalValue, treatment.intervalUnit)}
+                  {treatment.name} · {describeTreatment(treatment)}
                 </option>
               ))}
             </select>
@@ -724,10 +722,7 @@ function TreatmentPreview({
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="font-bold text-slate-900">{treatment.name}</h3>
-        <span className="text-sm text-slate-600">
-          {treatment.steps.length} appointments,{' '}
-          {describeInterval(treatment.intervalValue, treatment.intervalUnit)}
-        </span>
+        <span className="text-sm text-slate-600">{describeTreatment(treatment)}</span>
       </div>
 
       {error ? (

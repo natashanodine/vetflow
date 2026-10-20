@@ -7,7 +7,7 @@ import {
   updateTreatment,
 } from '../../api/schedule'
 import { useCan } from '../../auth/hooks'
-import { describeInterval } from '../../lib/clinicCalendar'
+import { describeGap, describeTreatment } from '../../lib/clinicCalendar'
 import type { IntervalUnit, Treatment, TreatmentInput } from '../../types/schedule'
 
 const MAX_APPOINTMENTS = 52
@@ -15,33 +15,39 @@ const MAX_APPOINTMENTS = 52
 interface StepDraft {
   name: string
   description: string
+  /** After the previous appointment (ignored for the first). */
+  gapValue: number
+  gapUnit: IntervalUnit
 }
 
 interface Draft {
   name: string
   description: string
-  intervalValue: number
-  intervalUnit: IntervalUnit
   steps: StepDraft[]
 }
+
+const newStep = (gapValue = 1, gapUnit: IntervalUnit = 'WEEKS'): StepDraft => ({
+  name: '',
+  description: '',
+  gapValue,
+  gapUnit,
+})
 
 const emptyDraft: Draft = {
   name: '',
   description: '',
-  intervalValue: 1,
-  intervalUnit: 'WEEKS',
-  steps: [{ name: '', description: '' }],
+  steps: [newStep()],
 }
 
 function draftFrom(treatment: Treatment): Draft {
   return {
     name: treatment.name,
     description: treatment.description ?? '',
-    intervalValue: treatment.intervalValue,
-    intervalUnit: treatment.intervalUnit,
     steps: treatment.steps.map((step) => ({
       name: step.name,
       description: step.description ?? '',
+      gapValue: step.gapValue ?? 1,
+      gapUnit: step.gapUnit ?? 'WEEKS',
     })),
   }
 }
@@ -50,11 +56,10 @@ function toInput(draft: Draft): TreatmentInput {
   return {
     name: draft.name.trim(),
     description: draft.description.trim(),
-    intervalValue: draft.intervalValue,
-    intervalUnit: draft.intervalUnit,
-    steps: draft.steps.map((step) => ({
+    steps: draft.steps.map((step, index) => ({
       name: step.name.trim(),
       description: step.description.trim(),
+      ...(index > 0 && { gapValue: step.gapValue, gapUnit: step.gapUnit }),
     })),
   }
 }
@@ -175,9 +180,7 @@ export default function TreatmentsPage() {
                 <div>
                   <h2 className="text-lg font-bold text-slate-900">{treatment.name}</h2>
                   <p className="mt-1 text-sm font-semibold text-teal-700">
-                    {treatment.steps.length}{' '}
-                    {treatment.steps.length === 1 ? 'appointment' : 'appointments'},{' '}
-                    {describeInterval(treatment.intervalValue, treatment.intervalUnit)}
+                    {describeTreatment(treatment)}
                   </p>
                 </div>
                 {canEdit && (
@@ -233,6 +236,11 @@ export default function TreatmentsPage() {
                       {index + 1}
                     </span>
                     <span>
+                      <span className="block text-xs font-semibold uppercase tracking-wide text-slate-400">
+                        {step.gapValue && step.gapUnit
+                          ? describeGap(step.gapValue, step.gapUnit)
+                          : 'Start date'}
+                      </span>
                       <span className="font-semibold text-slate-800">{step.name}</span>
                       {step.description && (
                         <span className="block whitespace-pre-line text-slate-500">
@@ -275,10 +283,13 @@ function TreatmentForm({
     const safeCount = Math.min(MAX_APPOINTMENTS, Math.max(1, Math.round(count) || 1))
     setDraft((current) => ({
       ...current,
-      steps: Array.from(
-        { length: safeCount },
-        (_, index) => current.steps[index] ?? { name: '', description: '' },
-      ),
+      steps: Array.from({ length: safeCount }, (_, index) => {
+        const existing = current.steps[index]
+        if (existing) return existing
+        // New appointments start with the same gap as the one before.
+        const previous = current.steps[index - 1] ?? current.steps.at(-1)
+        return newStep(previous?.gapValue, previous?.gapUnit)
+      }),
     }))
   }
 
@@ -362,56 +373,71 @@ function TreatmentForm({
               className={inputStyles}
             />
           </Field>
-          <div>
-            <span className="mb-1.5 block text-sm font-semibold text-slate-700">
-              How often
-            </span>
-            <div className="flex items-center gap-2">
-              <span className="text-slate-600">Every</span>
-              <input
-                name="intervalValue"
-                type="number"
-                min={1}
-                max={365}
-                required
-                aria-label="Interval"
-                value={draft.intervalValue}
-                onChange={(event) =>
-                  setDraft({
-                    ...draft,
-                    intervalValue: Math.min(365, Math.max(1, Math.round(Number(event.target.value)) || 1)),
-                  })
-                }
-                className={`${inputStyles} w-24`}
-              />
-              <select
-                name="intervalUnit"
-                aria-label="Interval unit"
-                value={draft.intervalUnit}
-                onChange={(event) =>
-                  setDraft({ ...draft, intervalUnit: event.target.value as IntervalUnit })
-                }
-                className={`${inputStyles} w-32`}
-              >
-                <option value="DAYS">{draft.intervalValue === 1 ? 'day' : 'days'}</option>
-                <option value="WEEKS">{draft.intervalValue === 1 ? 'week' : 'weeks'}</option>
-              </select>
-            </div>
-          </div>
         </div>
 
         <div className="space-y-3 border-t border-slate-200 pt-5">
           <h3 className="font-bold text-slate-900">Appointments</h3>
           <p className="text-sm text-slate-500">
-            Weekend dates move to the nearest weekday, and clashes with booked appointments
-            move to the next free slot. You&apos;ll see every date before booking.
+            The first appointment is the start date you choose when booking. Set how long
+            after the previous one each later appointment should be. Weekend dates move to
+            the nearest weekday, and clashes with booked appointments move to the next free
+            slot. You&apos;ll see every date before booking.
           </p>
           <ol className="space-y-3">
             {draft.steps.map((step, index) => (
-              <li key={index} className="grid gap-3 rounded-xl bg-slate-50 p-4 md:grid-cols-[2.5rem_1fr_1.5fr]">
+              <li
+                key={index}
+                className="grid gap-3 rounded-xl bg-slate-50 p-4 md:grid-cols-[2.5rem_13rem_1fr_1.5fr]"
+              >
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-bold text-teal-700 ring-1 ring-teal-100">
                   {index + 1}
                 </span>
+                {index === 0 ? (
+                  <div className="space-y-1.5">
+                    <span className="block text-sm font-semibold text-slate-700">When</span>
+                    <p className="rounded-lg bg-white px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
+                      Start date, chosen when booking
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <span className="block text-sm font-semibold text-slate-700">
+                      After the previous one
+                    </span>
+                    <div className="flex gap-2">
+                      <input
+                        name={`step-${index}-gapValue`}
+                        type="number"
+                        min={1}
+                        max={365}
+                        required
+                        aria-label={`Appointment ${index + 1}: how many`}
+                        value={step.gapValue}
+                        onChange={(event) =>
+                          setStep(index, {
+                            gapValue: Math.min(
+                              365,
+                              Math.max(1, Math.round(Number(event.target.value)) || 1),
+                            ),
+                          })
+                        }
+                        className={`${inputStyles} w-20`}
+                      />
+                      <select
+                        name={`step-${index}-gapUnit`}
+                        aria-label={`Appointment ${index + 1}: days or weeks`}
+                        value={step.gapUnit}
+                        onChange={(event) =>
+                          setStep(index, { gapUnit: event.target.value as IntervalUnit })
+                        }
+                        className={inputStyles}
+                      >
+                        <option value="DAYS">{step.gapValue === 1 ? 'day' : 'days'}</option>
+                        <option value="WEEKS">{step.gapValue === 1 ? 'week' : 'weeks'}</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
                 <Field label={`Appointment ${index + 1} name`}>
                   <input
                     name={`step-${index}-name`}

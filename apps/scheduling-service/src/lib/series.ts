@@ -6,7 +6,7 @@ import {
   toClinicTime,
   type BusyPeriod,
 } from './clinicHours.js'
-import { Appointment, type TreatmentDoc } from '../models/index.js'
+import { Appointment, stepGap, type TreatmentDoc } from '../models/index.js'
 
 export interface PlannedAppointment {
   stepNumber: number
@@ -19,8 +19,10 @@ export interface PlannedAppointment {
   movedBecause: 'weekend' | 'clash' | null
 }
 
-export function intervalInDays(treatment: Pick<TreatmentDoc, 'intervalValue' | 'intervalUnit'>) {
-  return treatment.intervalValue * (treatment.intervalUnit === 'WEEKS' ? 7 : 1)
+/** Days after the previous appointment for step `index` (0 for the first). */
+function gapInDays(treatment: TreatmentDoc, index: number) {
+  const gap = stepGap(treatment, index)
+  return gap ? gap.value * (gap.unit === 'WEEKS' ? 7 : 1) : 0
 }
 
 /** Booked appointments (not cancelled) between two instants. */
@@ -37,8 +39,9 @@ async function busyPeriods(from: Date, to: Date): Promise<BusyPeriod[]> {
 }
 
 /**
- * Works out the date and time of every appointment in a treatment course,
- * starting at `firstStart` and repeating at the plan's interval:
+ * Works out the date and time of every appointment in a treatment course.
+ * The first is at `firstStart`; each later one is its step's gap (days or
+ * weeks) after the date the previous appointment actually landed on:
  * - a date on a Saturday or Sunday moves to the nearest weekday;
  * - every appointment keeps the first one's time of day;
  * - if that time clashes with a booked appointment (or doesn't fit before
@@ -50,14 +53,17 @@ export async function planSeries(
   durationMinutes: number,
 ): Promise<PlannedAppointment[]> {
   const first = toClinicTime(firstStart)
-  const stepDays = intervalInDays(treatment)
-  const lastPlanned = addDays(first.day, stepDays * (treatment.steps.length - 1) + 60)
+  const totalDays = treatment.steps.reduce((sum, _step, index) => sum + gapInDays(treatment, index), 0)
+  const lastPlanned = addDays(first.day, totalDays + 60)
   const lastInstant = new Date(Date.UTC(lastPlanned.year, lastPlanned.month - 1, lastPlanned.day))
   const busy = await busyPeriods(firstStart, lastInstant)
 
   const plan: PlannedAppointment[] = []
   for (const [index, step] of treatment.steps.entries()) {
-    const idealDay = addDays(first.day, stepDays * index)
+    const previousPlaced = plan.at(-1)
+    const idealDay = previousPlaced
+      ? addDays(toClinicTime(previousPlaced.startsAt).day, gapInDays(treatment, index))
+      : first.day
     const day = nearestWorkingDay(idealDay)
     const plannedFor = fromClinicTime(idealDay, first.minutes)
     // Each appointment must come after the previous one.

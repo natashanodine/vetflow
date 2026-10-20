@@ -35,14 +35,15 @@ export type IntervalUnit = 'DAYS' | 'WEEKS'
 export interface TreatmentStep {
   name: string
   description: string | null
+  /** How long after the previous appointment; null for the first (the start date). */
+  gapValue: number | null
+  gapUnit: IntervalUnit | null
 }
 
 export interface Treatment {
   id: string
   name: string
   description: string | null
-  intervalValue: number
-  intervalUnit: IntervalUnit
   steps: TreatmentStep[]
   createdAt: string
   updatedAt: string
@@ -51,9 +52,7 @@ export interface Treatment {
 export interface TreatmentInput {
   name: string
   description?: string
-  intervalValue: number
-  intervalUnit: IntervalUnit
-  steps: { name: string; description?: string }[]
+  steps: { name: string; description?: string; gapValue?: number; gapUnit?: IntervalUnit }[]
 }
 
 export interface PlannedAppointment {

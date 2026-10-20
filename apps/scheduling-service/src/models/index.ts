@@ -82,19 +82,28 @@ export function serializeAppointment(appointment: AppointmentDoc) {
 
 export const intervalUnits = ['DAYS', 'WEEKS'] as const
 
+export type IntervalUnit = (typeof intervalUnits)[number]
+
 export interface TreatmentStep {
   name: string
   description?: string
+  /**
+   * How long after the previous appointment this one is, e.g. 2 WEEKS.
+   * Not used for the first appointment, which is the start date chosen when
+   * booking.
+   */
+  gapValue?: number
+  gapUnit?: IntervalUnit
 }
 
-/** A reusable treatment plan: a named series of appointments at a set interval. */
+/** A reusable treatment plan: a named series of appointments. */
 export interface TreatmentDoc {
   _id: string
   name: string
   description?: string
-  /** Time between appointments, e.g. every 2 WEEKS. */
-  intervalValue: number
-  intervalUnit: (typeof intervalUnits)[number]
+  /** Older plans: one interval for every gap (used when a step has none). */
+  intervalValue?: number
+  intervalUnit?: IntervalUnit
   /** One entry per appointment, in order. */
   steps: TreatmentStep[]
   createdAt: Date
@@ -106,14 +115,16 @@ const treatmentSchema = new Schema<TreatmentDoc>(
     _id: uuidId,
     name: { type: String, required: true, maxlength: 120 },
     description: { type: String, maxlength: 2000 },
-    intervalValue: { type: Number, required: true, min: 1, max: 365 },
-    intervalUnit: { type: String, enum: intervalUnits, required: true },
+    intervalValue: { type: Number, min: 1, max: 365 },
+    intervalUnit: { type: String, enum: intervalUnits },
     steps: {
       type: [
         new Schema<TreatmentStep>(
           {
             name: { type: String, required: true, maxlength: 120 },
             description: { type: String, maxlength: 2000 },
+            gapValue: { type: Number, min: 1, max: 365 },
+            gapUnit: { type: String, enum: intervalUnits },
           },
           { _id: false },
         ),
@@ -126,17 +137,30 @@ const treatmentSchema = new Schema<TreatmentDoc>(
 
 export const Treatment = model<TreatmentDoc>('Treatment', treatmentSchema, 'treatments')
 
+/** A step's gap after the previous appointment (null for the first). */
+export function stepGap(treatment: TreatmentDoc, index: number) {
+  if (index === 0) return null
+  const step = treatment.steps[index]
+  return {
+    value: step?.gapValue ?? treatment.intervalValue ?? 1,
+    unit: step?.gapUnit ?? treatment.intervalUnit ?? 'WEEKS',
+  }
+}
+
 export function serializeTreatment(treatment: TreatmentDoc) {
   return {
     id: treatment._id,
     name: treatment.name,
     description: treatment.description ?? null,
-    intervalValue: treatment.intervalValue,
-    intervalUnit: treatment.intervalUnit,
-    steps: treatment.steps.map((step) => ({
-      name: step.name,
-      description: step.description ?? null,
-    })),
+    steps: treatment.steps.map((step, index) => {
+      const gap = stepGap(treatment, index)
+      return {
+        name: step.name,
+        description: step.description ?? null,
+        gapValue: gap?.value ?? null,
+        gapUnit: gap?.unit ?? null,
+      }
+    }),
     createdAt: treatment.createdAt,
     updatedAt: treatment.updatedAt,
   }

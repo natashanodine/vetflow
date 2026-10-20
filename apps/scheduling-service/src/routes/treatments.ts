@@ -17,15 +17,13 @@ import {
   intervalUnits,
   serializeAppointment,
   serializeTreatment,
-  type TreatmentDoc,
+  type IntervalUnit,
 } from '../models/index.js'
 
 interface TreatmentBody {
   name: string
   description?: string
-  intervalValue: number
-  intervalUnit: TreatmentDoc['intervalUnit']
-  steps: { name: string; description?: string }[]
+  steps: { name: string; description?: string; gapValue?: number; gapUnit?: IntervalUnit }[]
 }
 
 interface ScheduleBody {
@@ -43,13 +41,11 @@ const idParams = {
 
 const treatmentBodySchema = {
   type: 'object',
-  required: ['name', 'intervalValue', 'intervalUnit', 'steps'],
+  required: ['name', 'steps'],
   additionalProperties: false,
   properties: {
     name: { type: 'string', minLength: 1, maxLength: 120 },
     description: { type: 'string', maxLength: 2000 },
-    intervalValue: { type: 'integer', minimum: 1, maximum: 365 },
-    intervalUnit: { type: 'string', enum: intervalUnits },
     steps: {
       type: 'array',
       minItems: 1,
@@ -61,6 +57,9 @@ const treatmentBodySchema = {
         properties: {
           name: { type: 'string', minLength: 1, maxLength: 120 },
           description: { type: 'string', maxLength: 2000 },
+          // Days or weeks after the previous appointment (all but the first).
+          gapValue: { type: 'integer', minimum: 1, maximum: 365 },
+          gapUnit: { type: 'string', enum: intervalUnits },
         },
       },
     },
@@ -72,16 +71,27 @@ function cleanTreatment(body: TreatmentBody) {
   return {
     name: body.name.trim(),
     ...(description ? { description } : {}),
-    intervalValue: body.intervalValue,
-    intervalUnit: body.intervalUnit,
-    steps: body.steps.map((step) => {
+    steps: body.steps.map((step, index) => {
       const stepDescription = step.description?.trim()
       return {
         name: step.name.trim(),
         ...(stepDescription ? { description: stepDescription } : {}),
+        ...(index > 0 && { gapValue: step.gapValue ?? 1, gapUnit: step.gapUnit ?? 'WEEKS' }),
       }
     }),
   }
+}
+
+/** Every appointment after the first needs its gap; replies 400 if one is missing. */
+function hasAllGaps(body: TreatmentBody, reply: FastifyReply) {
+  const missing = body.steps.findIndex(
+    (step, index) => index > 0 && (step.gapValue === undefined || step.gapUnit === undefined),
+  )
+  if (missing === -1) return true
+  void reply.status(400).send({
+    message: `Say how long after the previous appointment appointment ${missing + 1} is.`,
+  })
+  return false
 }
 
 /** Checks the first appointment's time; replies with 400 and returns false if invalid. */
@@ -141,6 +151,7 @@ export const treatmentRoutes: FastifyPluginAsync = async (app) => {
     { schema: { body: treatmentBodySchema } },
     async (request, reply) => {
       if (!requireEditor(request, reply)) return
+      if (!hasAllGaps(request.body, reply)) return
       const treatment = await Treatment.create(cleanTreatment(request.body))
       return reply.status(201).send(serializeTreatment(treatment.toObject()))
     },
@@ -151,12 +162,18 @@ export const treatmentRoutes: FastifyPluginAsync = async (app) => {
     { schema: { params: idParams, body: treatmentBodySchema } },
     async (request, reply) => {
       if (!requireEditor(request, reply)) return
+      if (!hasAllGaps(request.body, reply)) return
       const values = cleanTreatment(request.body)
       const treatment = await Treatment.findByIdAndUpdate(
         request.params.treatmentId,
         {
           $set: values,
-          ...(values.description === undefined && { $unset: { description: '' } }),
+          // The per-appointment gaps replace any old single interval.
+          $unset: {
+            intervalValue: '',
+            intervalUnit: '',
+            ...(values.description === undefined && { description: '' }),
+          },
         },
         { new: true, runValidators: true },
       ).lean()
