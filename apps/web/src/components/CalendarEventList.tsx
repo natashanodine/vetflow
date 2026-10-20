@@ -49,7 +49,7 @@ export default function CalendarEventList({
             </span>
           </div>
 
-          <p className="mt-2 text-sm text-slate-500">{event.details}</p>
+          <p className="mt-2 whitespace-pre-line text-sm text-slate-500">{event.details}</p>
 
           {showDate && (
             <p className="mt-2 text-sm font-semibold text-teal-700">

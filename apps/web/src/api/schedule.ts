@@ -1,7 +1,12 @@
 import { request } from './http'
+import { jsonRequest } from './http'
 import type {
   Appointment,
   CreateAppointmentInput,
+  PlannedAppointment,
+  ScheduleRules,
+  Treatment,
+  TreatmentInput,
   UpdateAppointmentInput,
 } from '../types/schedule'
 
@@ -59,4 +64,47 @@ export function updateAppointment(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
+}
+
+export function getScheduleRules(): Promise<ScheduleRules> {
+  return apiRequest<ScheduleRules>('/schedule-rules')
+}
+
+export function getTreatments(): Promise<Treatment[]> {
+  return apiRequest<Treatment[]>('/treatments')
+}
+
+export function createTreatment(input: TreatmentInput): Promise<Treatment> {
+  return apiRequest<Treatment>('/treatments', jsonRequest('POST', input))
+}
+
+export function updateTreatment(treatmentId: string, input: TreatmentInput): Promise<Treatment> {
+  return apiRequest<Treatment>(`/treatments/${treatmentId}`, jsonRequest('PUT', input))
+}
+
+export function deleteTreatment(treatmentId: string): Promise<void> {
+  return apiRequest<void>(`/treatments/${treatmentId}`, { method: 'DELETE' })
+}
+
+export interface TreatmentBookingInput {
+  startsAt: string
+  durationMinutes: number
+  patientId?: string
+  details?: string
+}
+
+/** The dates a treatment course would get, without booking anything. */
+export function previewTreatment(
+  treatmentId: string,
+  input: TreatmentBookingInput,
+): Promise<{ treatment: Treatment; appointments: PlannedAppointment[] }> {
+  return apiRequest(`/treatments/${treatmentId}/preview`, jsonRequest('POST', input))
+}
+
+/** Books every appointment of a treatment course for a patient. */
+export function bookTreatment(
+  treatmentId: string,
+  input: TreatmentBookingInput & { patientId: string },
+): Promise<{ seriesId: string; appointments: Appointment[] }> {
+  return apiRequest(`/treatments/${treatmentId}/book`, jsonRequest('POST', input))
 }

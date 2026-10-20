@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { CalendarEvent } from '../data/calendarEvents'
 import { addDays, toDateKey } from '../data/calendarEvents'
+import { isWeekend } from '../lib/clinicCalendar'
 
 interface MonthCalendarProps {
   events: CalendarEvent[]
@@ -75,7 +76,7 @@ export default function MonthCalendar({
           </div>
           {onDateSelect && (
             <p className="mt-2 text-xs font-medium text-teal-700">
-              Select today or a future day to add an appointment.
+              Select a weekday from today onwards to add an appointment. The clinic is closed on weekends.
             </p>
           )}
         </div>
@@ -128,7 +129,9 @@ export default function MonthCalendar({
                 date.getMonth() === visibleMonth.getMonth()
               const isToday = dateKey === toDateKey(today)
               const isPast = dateKey < toDateKey(today)
-              const canSelect = Boolean(onDateSelect) && !isPast
+              const isClosed = isWeekend(date)
+              const isBlocked = isPast || isClosed
+              const canSelect = Boolean(onDateSelect) && !isBlocked
 
               return (
                 <div
@@ -136,6 +139,7 @@ export default function MonthCalendar({
                   role={canSelect ? 'button' : undefined}
                   tabIndex={canSelect ? 0 : undefined}
                   data-past={isPast || undefined}
+                  data-closed={isClosed || undefined}
                   aria-label={
                     canSelect
                       ? `Add appointment on ${new Intl.DateTimeFormat(
@@ -165,10 +169,12 @@ export default function MonthCalendar({
                   title={
                     onDateSelect && isPast
                       ? 'Past dates cannot be booked'
-                      : undefined
+                      : onDateSelect && isClosed
+                        ? 'Closed on weekends'
+                        : undefined
                   }
                   className={`min-h-32 border-b border-r border-slate-100 p-2 text-left outline-none ${
-                    isPast && onDateSelect
+                    isBlocked && onDateSelect
                       ? 'cursor-not-allowed bg-slate-100/80'
                       : isCurrentMonth
                         ? 'bg-white'
@@ -183,7 +189,7 @@ export default function MonthCalendar({
                     className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold ${
                       isToday
                         ? 'bg-teal-600 text-white'
-                        : isPast && onDateSelect
+                        : isBlocked && onDateSelect
                           ? 'text-slate-300'
                           : isCurrentMonth
                           ? 'text-slate-700'

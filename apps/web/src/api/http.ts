@@ -44,7 +44,7 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function jsonRequest(
-  method: 'POST' | 'PATCH',
+  method: 'POST' | 'PATCH' | 'PUT',
   body: unknown,
 ): RequestInit {
   return {

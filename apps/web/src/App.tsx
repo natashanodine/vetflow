@@ -15,6 +15,7 @@ import LoginPage from './pages/LoginPage'
 import HomePage from './pages/public/HomePage'
 import ServicesPage from './pages/public/ServicesPage'
 import PublicTeamPage from './pages/public/TeamPage'
+import TreatmentsPage from './pages/app/TreatmentsPage'
 
 function Dashboard() {
   const { session } = useAuth()
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="patients/:patientId" element={<PatientDetailsPage />} />
         <Route path="owners" element={<OwnersPage />} />
         <Route path="owners/:ownerId" element={<OwnerDetailsPage />} />
+        <Route path="treatments" element={<TreatmentsPage />} />
         <Route path="team" element={<Team />} />
         <Route path="account" element={<AccountPage />} />
       </Route>

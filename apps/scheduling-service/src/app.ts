@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import { disconnectDatabase } from './lib/db.js'
 import { appointmentRoutes } from './routes/appointments.js'
 import { healthRoutes } from './routes/health.js'
+import { treatmentRoutes } from './routes/treatments.js'
 
 export function buildApp() {
   const app = Fastify({ logger: true })
@@ -17,6 +18,7 @@ export function buildApp() {
 
   app.register(healthRoutes)
   app.register(appointmentRoutes)
+  app.register(treatmentRoutes)
 
   app.addHook('onClose', async () => {
     await disconnectDatabase()

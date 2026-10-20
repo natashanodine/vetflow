@@ -1,5 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify'
+import { isOnWorkingDay } from '../lib/clinicHours.js'
 import { Appointment, serializeAppointment } from '../models/index.js'
+
+const CLOSED_DAY_MESSAGE =
+  'The clinic is closed on Saturdays and Sundays. Choose a weekday.'
 
 type AppointmentCategory = 'APPOINTMENT' | 'TREATMENT' | 'REPRODUCTION'
 type AppointmentStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
@@ -143,6 +147,9 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
           .status(400)
           .send({ message: 'Appointments cannot be booked in the past.' })
       }
+      if (!isOnWorkingDay(new Date(request.body.startsAt))) {
+        return reply.status(400).send({ message: CLOSED_DAY_MESSAGE })
+      }
 
       const patientResponse = await fetch(
         `${clinicServiceUrl}/patients/${request.body.patientId}`,
@@ -232,6 +239,9 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
           return reply
             .status(400)
             .send({ message: 'Appointments cannot be moved into the past.' })
+        }
+        if (isRescheduled && !isOnWorkingDay(startsAt)) {
+          return reply.status(400).send({ message: CLOSED_DAY_MESSAGE })
         }
       }
 

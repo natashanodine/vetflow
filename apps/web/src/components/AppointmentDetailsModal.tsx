@@ -6,6 +6,7 @@ import AttachmentsPanel from './AttachmentsPanel'
 import type { CalendarEvent } from '../data/calendarEvents'
 import type { Patient } from '../types/clinic'
 import type { Appointment } from '../types/schedule'
+import { CLOSED_DAY_MESSAGE, isWeekend } from '../lib/clinicCalendar'
 
 interface AppointmentDetailsModalProps {
   event: CalendarEvent
@@ -99,6 +100,9 @@ export default function AppointmentDetailsModal({
         toMinute(startsAt) !== toMinute(new Date(appointment.startsAt))
       if (isRescheduled && startsAt.getTime() < Date.now()) {
         throw new Error('Choose a date and time in the future.')
+      }
+      if (isRescheduled && isWeekend(startsAt)) {
+        throw new Error(CLOSED_DAY_MESSAGE)
       }
 
       const updatedAppointment = await updateAppointment(appointment.id, {
@@ -317,6 +321,14 @@ export default function AppointmentDetailsModal({
                   {formatLabel(event.status)}
                 </span>
               </div>
+
+              {appointment.treatment && (
+                <p className="mt-4 rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-900">
+                  Part of the treatment <strong>{appointment.treatment.name}</strong>:
+                  appointment {appointment.treatment.stepNumber} of{' '}
+                  {appointment.treatment.stepCount}.
+                </p>
+              )}
 
               <dl className="mt-6 grid gap-5 sm:grid-cols-2">
                 <div>

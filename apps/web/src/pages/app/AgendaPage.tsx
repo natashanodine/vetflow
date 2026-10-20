@@ -110,9 +110,9 @@ export default function AgendaPage() {
             key={selectedDate ?? 'manual-appointment'}
             initialDate={selectedDate}
             onCancel={() => setIsAddingAppointment(false)}
-            onCreated={(appointment, warning) => {
+            onCreated={(created, warning) => {
               setUploadWarning(warning ?? null)
-              setAppointments((current) => [...current, appointment])
+              setAppointments((current) => [...current, ...created])
               setIsAddingAppointment(false)
               setSelectedDate(undefined)
             }}

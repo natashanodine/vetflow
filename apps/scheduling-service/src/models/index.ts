@@ -16,6 +16,13 @@ export interface AppointmentDoc {
   durationMinutes: number
   category: (typeof categories)[number]
   status: (typeof statuses)[number]
+  /** Set when the appointment was booked as part of a treatment plan. */
+  treatmentId?: string
+  treatmentName?: string
+  /** Shared by all appointments booked together for one treatment course. */
+  seriesId?: string
+  stepNumber?: number
+  stepCount?: number
   createdAt: Date
   updatedAt: Date
 }
@@ -32,6 +39,11 @@ const appointmentSchema = new Schema<AppointmentDoc>(
     durationMinutes: { type: Number, default: 30 },
     category: { type: String, enum: categories, default: 'APPOINTMENT' },
     status: { type: String, enum: statuses, default: 'SCHEDULED' },
+    treatmentId: { type: String },
+    treatmentName: { type: String, maxlength: 120 },
+    seriesId: { type: String, index: true },
+    stepNumber: { type: Number },
+    stepCount: { type: Number },
   },
   { timestamps: true, versionKey: false },
 )
@@ -54,7 +66,78 @@ export function serializeAppointment(appointment: AppointmentDoc) {
     durationMinutes: appointment.durationMinutes,
     category: appointment.category,
     status: appointment.status,
+    treatment: appointment.seriesId
+      ? {
+          id: appointment.treatmentId ?? null,
+          name: appointment.treatmentName ?? '',
+          seriesId: appointment.seriesId,
+          stepNumber: appointment.stepNumber ?? 1,
+          stepCount: appointment.stepCount ?? 1,
+        }
+      : null,
     createdAt: appointment.createdAt,
     updatedAt: appointment.updatedAt,
+  }
+}
+
+export const intervalUnits = ['DAYS', 'WEEKS'] as const
+
+export interface TreatmentStep {
+  name: string
+  description?: string
+}
+
+/** A reusable treatment plan: a named series of appointments at a set interval. */
+export interface TreatmentDoc {
+  _id: string
+  name: string
+  description?: string
+  /** Time between appointments, e.g. every 2 WEEKS. */
+  intervalValue: number
+  intervalUnit: (typeof intervalUnits)[number]
+  /** One entry per appointment, in order. */
+  steps: TreatmentStep[]
+  createdAt: Date
+  updatedAt: Date
+}
+
+const treatmentSchema = new Schema<TreatmentDoc>(
+  {
+    _id: uuidId,
+    name: { type: String, required: true, maxlength: 120 },
+    description: { type: String, maxlength: 2000 },
+    intervalValue: { type: Number, required: true, min: 1, max: 365 },
+    intervalUnit: { type: String, enum: intervalUnits, required: true },
+    steps: {
+      type: [
+        new Schema<TreatmentStep>(
+          {
+            name: { type: String, required: true, maxlength: 120 },
+            description: { type: String, maxlength: 2000 },
+          },
+          { _id: false },
+        ),
+      ],
+      validate: (steps: TreatmentStep[]) => steps.length >= 1 && steps.length <= 52,
+    },
+  },
+  { timestamps: true, versionKey: false },
+)
+
+export const Treatment = model<TreatmentDoc>('Treatment', treatmentSchema, 'treatments')
+
+export function serializeTreatment(treatment: TreatmentDoc) {
+  return {
+    id: treatment._id,
+    name: treatment.name,
+    description: treatment.description ?? null,
+    intervalValue: treatment.intervalValue,
+    intervalUnit: treatment.intervalUnit,
+    steps: treatment.steps.map((step) => ({
+      name: step.name,
+      description: step.description ?? null,
+    })),
+    createdAt: treatment.createdAt,
+    updatedAt: treatment.updatedAt,
   }
 }

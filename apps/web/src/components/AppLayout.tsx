@@ -7,6 +7,7 @@ const navigation = [
   { label: 'Agenda', path: '/app/agenda' },
   { label: 'Patients', path: '/app/patients' },
   { label: 'Owners', path: '/app/owners' },
+  { label: 'Treatments', path: '/app/treatments' },
 ]
 
 export default function AppLayout() {

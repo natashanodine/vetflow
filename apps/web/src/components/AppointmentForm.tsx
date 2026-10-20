@@ -6,16 +6,31 @@ import {
   getPatients,
   uploadAttachment,
 } from '../api/clinic'
-import { createAppointment } from '../api/schedule'
+import {
+  bookTreatment,
+  createAppointment,
+  getScheduleRules,
+  getTreatments,
+  previewTreatment,
+} from '../api/schedule'
+import { CLOSED_DAY_MESSAGE, describeInterval, isWeekendKey } from '../lib/clinicCalendar'
 import type { Owner, Patient } from '../types/clinic'
-import type { Appointment } from '../types/schedule'
+import type {
+  Appointment,
+  PlannedAppointment,
+  ScheduleRules,
+  Treatment,
+} from '../types/schedule'
 import { ACCEPTED_FILES, formatBytes, prepareFile } from '../utils/files'
 
 interface AppointmentFormProps {
   initialDate?: string
   onCancel: () => void
-  /** `uploadWarning` is set when the appointment was saved but a file wasn't. */
-  onCreated: (appointment: Appointment, uploadWarning?: string) => void
+  /**
+   * All appointments created (several for a treatment course). `uploadWarning`
+   * is set when the appointments were saved but a file wasn't.
+   */
+  onCreated: (appointments: Appointment[], uploadWarning?: string) => void
 }
 
 type RecordMode = 'EXISTING' | 'NEW'
@@ -44,6 +59,75 @@ export default function AppointmentForm({
   const [error, setError] = useState<string | null>(null)
   const [files, setFiles] = useState<File[]>([])
   const [submitStep, setSubmitStep] = useState<string | null>(null)
+  const [treatments, setTreatments] = useState<Treatment[]>([])
+  const [rules, setRules] = useState<ScheduleRules | null>(null)
+  const [treatmentId, setTreatmentId] = useState('')
+  const [dateValue, setDateValue] = useState(() => defaultAppointmentDate(initialDate))
+  const [timeValue, setTimeValue] = useState(() => defaultAppointmentTime(initialDate))
+  const [durationValue, setDurationValue] = useState('30')
+  const [preview, setPreview] = useState<PlannedAppointment[] | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [isPreviewing, setIsPreviewing] = useState(false)
+
+  const selectedTreatment = treatments.find((treatment) => treatment.id === treatmentId)
+  const isWeekendDate = Boolean(dateValue) && isWeekendKey(dateValue)
+
+  useEffect(() => {
+    let isActive = true
+    // Optional extras: the form still works for single appointments without them.
+    getTreatments()
+      .then((data) => {
+        if (isActive) setTreatments(data)
+      })
+      .catch(() => undefined)
+    getScheduleRules()
+      .then((data) => {
+        if (isActive) setRules(data)
+      })
+      .catch(() => undefined)
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  // Shows the dates a treatment course would get, whenever its inputs change.
+  useEffect(() => {
+    if (!treatmentId || !dateValue || !timeValue) return
+    let isActive = true
+    const timer = setTimeout(() => {
+      if (isWeekendKey(dateValue)) {
+        setPreview(null)
+        setPreviewError(CLOSED_DAY_MESSAGE)
+        return
+      }
+      const startsAt = new Date(`${dateValue}T${timeValue}:00`)
+      if (Number.isNaN(startsAt.getTime())) return
+      setIsPreviewing(true)
+      previewTreatment(treatmentId, {
+        startsAt: startsAt.toISOString(),
+        durationMinutes: Number(durationValue),
+      })
+        .then((result) => {
+          if (!isActive) return
+          setPreview(result.appointments)
+          setPreviewError(null)
+        })
+        .catch((planError: unknown) => {
+          if (!isActive) return
+          setPreview(null)
+          setPreviewError(
+            planError instanceof Error ? planError.message : 'Unable to plan the treatment dates',
+          )
+        })
+        .finally(() => {
+          if (isActive) setIsPreviewing(false)
+        })
+    }, 350)
+    return () => {
+      isActive = false
+      clearTimeout(timer)
+    }
+  }, [treatmentId, dateValue, timeValue, durationValue])
 
   useEffect(() => {
     let isActive = true
@@ -86,6 +170,9 @@ export default function AppointmentForm({
       )
       if (startsAt.getTime() < Date.now()) {
         throw new Error('Choose a date and time in the future.')
+      }
+      if (isWeekendKey(requiredValue(form, 'appointmentDate'))) {
+        throw new Error(CLOSED_DAY_MESSAGE)
       }
 
       // Check and resize files first so a bad file never leaves a
@@ -165,17 +252,34 @@ export default function AppointmentForm({
       }
 
       const details = optionalValue(form, 'details')
-      const appointment = await createAppointment({
-        patientId,
-        title: requiredValue(form, 'title'),
-        startsAt: startsAt.toISOString(),
-        durationMinutes: Number(requiredValue(form, 'durationMinutes')),
-        category: requiredValue(
-          form,
-          'category',
-        ) as 'APPOINTMENT' | 'TREATMENT' | 'REPRODUCTION',
-        ...(details && { details }),
-      })
+      const durationMinutes = Number(requiredValue(form, 'durationMinutes'))
+      let created: Appointment[]
+      if (treatmentId) {
+        setSubmitStep('Booking treatment…')
+        const result = await bookTreatment(treatmentId, {
+          patientId,
+          startsAt: startsAt.toISOString(),
+          durationMinutes,
+          ...(details && { details }),
+        })
+        created = result.appointments
+      } else {
+        created = [
+          await createAppointment({
+            patientId,
+            title: requiredValue(form, 'title'),
+            startsAt: startsAt.toISOString(),
+            durationMinutes,
+            category: requiredValue(
+              form,
+              'category',
+            ) as 'APPOINTMENT' | 'TREATMENT' | 'REPRODUCTION',
+            ...(details && { details }),
+          }),
+        ]
+      }
+      // Files go with the first appointment (of a treatment course).
+      const appointment = created[0]!
 
       const failedUploads: string[] = []
       for (const [index, file] of preparedFiles.entries()) {
@@ -193,7 +297,7 @@ export default function AppointmentForm({
       }
 
       onCreated(
-        appointment,
+        created,
         failedUploads.length > 0
           ? `The appointment was saved, but ${failedUploads.length === 1 ? 'this file was' : 'these files were'} not uploaded: ${failedUploads.join('; ')}. You can add ${failedUploads.length === 1 ? 'it' : 'them'} from the appointment details.`
           : undefined,
@@ -389,7 +493,33 @@ export default function AppointmentForm({
           Calendar details
         </legend>
 
+        {treatments.length > 0 && (
+          <Field label="Treatment plan">
+            <select
+              name="treatmentId"
+              value={treatmentId}
+              onChange={(event) => {
+                setTreatmentId(event.target.value)
+                setPreview(null)
+                setPreviewError(null)
+              }}
+              className={inputStyles}
+            >
+              <option value="">No treatment: a single appointment</option>
+              {treatments.map((treatment) => (
+                <option key={treatment.id} value={treatment.id}>
+                  {treatment.name} · {treatment.steps.length}{' '}
+                  {treatment.steps.length === 1 ? 'appointment' : 'appointments'},{' '}
+                  {describeInterval(treatment.intervalValue, treatment.intervalUnit)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
+
         <div className="grid gap-4 md:grid-cols-2">
+          {!selectedTreatment && (
+          <>
           <Field label="Title">
             <input
               name="title"
@@ -410,29 +540,46 @@ export default function AppointmentForm({
               <option value="REPRODUCTION">Reproduction</option>
             </select>
           </Field>
-          <Field label="Date">
+          </>
+          )}
+          <Field label={selectedTreatment ? 'First appointment date' : 'Date'}>
             <input
               name="appointmentDate"
               type="date"
               required
               min={localDateKey(new Date())}
-              defaultValue={defaultAppointmentDate(initialDate)}
-              className={inputStyles}
+              value={dateValue}
+              onChange={(event) => setDateValue(event.target.value)}
+              aria-invalid={isWeekendDate || undefined}
+              className={`${inputStyles} ${isWeekendDate ? 'border-amber-400' : ''}`}
             />
+            {isWeekendDate && (
+              <span className="block text-sm font-medium text-amber-700">
+                {CLOSED_DAY_MESSAGE}
+              </span>
+            )}
           </Field>
-          <Field label="Time">
+          <Field label={selectedTreatment ? 'First appointment time' : 'Time'}>
             <input
               name="appointmentTime"
               type="time"
               required
-              defaultValue={defaultAppointmentTime(initialDate)}
+              value={timeValue}
+              onChange={(event) => setTimeValue(event.target.value)}
+              {...(selectedTreatment && rules && { min: rules.opensAt, max: rules.closesAt })}
               className={inputStyles}
             />
+            {selectedTreatment && rules && (
+              <span className="block text-xs text-slate-500">
+                Opening hours {rules.opensAt}–{rules.closesAt}, Monday to Friday.
+              </span>
+            )}
           </Field>
-          <Field label="Duration">
+          <Field label={selectedTreatment ? 'Length of each appointment' : 'Duration'}>
             <select
               name="durationMinutes"
-              defaultValue="30"
+              value={durationValue}
+              onChange={(event) => setDurationValue(event.target.value)}
               className={inputStyles}
             >
               <option value="15">15 minutes</option>
@@ -445,7 +592,16 @@ export default function AppointmentForm({
           </Field>
         </div>
 
-        <Field label="Details">
+        {selectedTreatment && (
+          <TreatmentPreview
+            treatment={selectedTreatment}
+            preview={preview}
+            error={previewError}
+            isLoading={isPreviewing}
+          />
+        )}
+
+        <Field label={selectedTreatment ? 'Notes for the first appointment' : 'Details'}>
           <textarea
             name="details"
             rows={3}
@@ -521,13 +677,88 @@ export default function AppointmentForm({
         </button>
         <button
           type="submit"
-          disabled={isLoadingRecords || isSubmitting}
+          disabled={
+            isLoadingRecords ||
+            isSubmitting ||
+            (Boolean(selectedTreatment) && (!preview || isPreviewing))
+          }
           className="rounded-lg bg-teal-600 px-5 py-2 font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {isSubmitting ? (submitStep ?? 'Saving…') : 'Save appointment'}
+          {isSubmitting
+            ? (submitStep ?? 'Saving…')
+            : selectedTreatment
+              ? `Book ${selectedTreatment.steps.length} ${selectedTreatment.steps.length === 1 ? 'appointment' : 'appointments'}`
+              : 'Save appointment'}
         </button>
       </div>
     </form>
+  )
+}
+
+function TreatmentPreview({
+  treatment,
+  preview,
+  error,
+  isLoading,
+}: {
+  treatment: Treatment
+  preview: PlannedAppointment[] | null
+  error: string | null
+  isLoading: boolean
+}) {
+  const formatDate = (iso: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(new Date(iso))
+  const formatTime = (iso: string) =>
+    new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
+
+  return (
+    <section
+      aria-label="Treatment dates"
+      aria-busy={isLoading}
+      className="rounded-xl border border-teal-100 bg-teal-50/50 p-4"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="font-bold text-slate-900">{treatment.name}</h3>
+        <span className="text-sm text-slate-600">
+          {treatment.steps.length} appointments,{' '}
+          {describeInterval(treatment.intervalValue, treatment.intervalUnit)}
+        </span>
+      </div>
+
+      {error ? (
+        <p role="alert" className="mt-3 text-sm font-medium text-red-700">
+          {error}
+        </p>
+      ) : !preview ? (
+        <p className="mt-3 text-sm text-slate-500">Working out the dates…</p>
+      ) : (
+        <ol className={`mt-3 divide-y divide-teal-100 ${isLoading ? 'opacity-50' : ''}`}>
+          {preview.map((item) => (
+            <li key={item.stepNumber} className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2 text-sm">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-bold text-teal-700 ring-1 ring-teal-100">
+                {item.stepNumber}
+              </span>
+              <span className="min-w-40 flex-1 font-semibold text-slate-800">{item.name}</span>
+              <span className="text-slate-700">
+                {formatDate(item.startsAt)} · {formatTime(item.startsAt)}
+              </span>
+              {item.movedBecause && (
+                <span className="basis-full pl-9 text-xs text-amber-700">
+                  {item.movedBecause === 'weekend'
+                    ? `Moved from ${formatDate(item.plannedFor)} (weekend)`
+                    : `Moved from ${formatDate(item.plannedFor)}, ${formatTime(item.plannedFor)} (that time is taken)`}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }
 
