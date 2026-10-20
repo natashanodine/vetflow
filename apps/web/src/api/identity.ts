@@ -26,9 +26,10 @@ function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
  * do this after a quiet period). Resolves quickly when they are already up.
  */
 export async function wakeServices() {
-  // Never block the login page for longer than this; sign-in itself also
-  // retries, so it's safe to let the person try.
-  const deadline = Date.now() + 90_000
+  // Free hosting can take a couple of minutes to start every service from
+  // cold. Never block the login page for longer than this; sign-in itself
+  // also retries, so it's safe to let the person try afterwards.
+  const deadline = Date.now() + 180_000
   while (Date.now() < deadline) {
     try {
       const response = await fetch('/api/wake', {

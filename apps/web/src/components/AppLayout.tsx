@@ -22,7 +22,7 @@ export default function AppLayout() {
           <div role="status">
             <p className="font-semibold text-slate-700">Starting up the clinic system…</p>
             <p className="mt-2 text-sm">
-              After a quiet period this can take up to a minute.
+              After a quiet period this can take a minute or two.
             </p>
           </div>
         ) : (

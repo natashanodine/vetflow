@@ -78,7 +78,7 @@ export default function LoginPage() {
             role="status"
             className="mt-6 rounded-xl bg-[#efe7d9] px-4 py-3 text-sm font-semibold text-[#56736c]"
           >
-            Starting up the clinic system. After a quiet period this can take up to a minute.
+            Starting up the clinic system. After a quiet period this can take a minute or two.
           </p>
         )}
 
