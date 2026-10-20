@@ -108,3 +108,14 @@ export function bookTreatment(
 ): Promise<{ seriesId: string; appointments: Appointment[] }> {
   return apiRequest(`/treatments/${treatmentId}/book`, jsonRequest('POST', input))
 }
+
+/**
+ * Deletes an appointment; scope "following" also deletes the later
+ * appointments of the same treatment course. Returns the deleted ids.
+ */
+export function deleteAppointment(
+  appointmentId: string,
+  scope: 'this' | 'following' = 'this',
+): Promise<{ deleted: string[] }> {
+  return apiRequest(`/appointments/${appointmentId}?scope=${scope}`, { method: 'DELETE' })
+}

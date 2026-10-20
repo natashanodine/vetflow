@@ -214,6 +214,12 @@ export default function PatientDetailsPage() {
           event={selectedEvent}
           appointment={selectedAppointment}
           onClose={() => setSelectedEvent(null)}
+          onDeleted={(deletedIds) => {
+            setAppointments((current) =>
+              current.filter((appointment) => !deletedIds.includes(appointment.id)),
+            )
+            setSelectedEvent(null)
+          }}
           onUpdated={(updatedAppointment) => {
             setAppointments((current) =>
               current

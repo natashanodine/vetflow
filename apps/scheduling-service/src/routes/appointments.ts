@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { isOnWorkingDay } from '../lib/clinicHours.js'
+import { requireEditor } from '../lib/requester.js'
 import { Appointment, serializeAppointment } from '../models/index.js'
 
 const CLOSED_DAY_MESSAGE =
@@ -303,6 +304,43 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
       }
 
       return serializeAppointment(appointment)
+    },
+  )
+
+  /**
+   * Deletes an appointment. With ?scope=following on a treatment appointment,
+   * also deletes the later appointments of the same treatment course.
+   * Files and medical history linked to it stay on the patient's record.
+   */
+  app.delete<{ Params: AppointmentParams; Querystring: { scope?: 'this' | 'following' } }>(
+    '/appointments/:appointmentId',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['appointmentId'],
+          properties: { appointmentId: { type: 'string', minLength: 36, maxLength: 36 } },
+        },
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { scope: { type: 'string', enum: ['this', 'following'] } },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireEditor(request, reply, 'Only admins and vets can delete appointments.')) return
+
+      const appointment = await Appointment.findById(request.params.appointmentId).lean()
+      if (!appointment) return reply.status(404).send({ message: 'Appointment not found' })
+
+      const filter =
+        request.query.scope === 'following' && appointment.seriesId
+          ? { seriesId: appointment.seriesId, startsAt: { $gte: appointment.startsAt } }
+          : { _id: appointment._id }
+      const toDelete = await Appointment.find(filter, { _id: 1 }).lean()
+      await Appointment.deleteMany({ _id: { $in: toDelete.map((item) => item._id) } })
+      return { deleted: toDelete.map((item) => item._id) }
     },
   )
 

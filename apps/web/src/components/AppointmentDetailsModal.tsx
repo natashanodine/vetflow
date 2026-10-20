@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getPatients } from '../api/clinic'
-import { updateAppointment } from '../api/schedule'
+import { deleteAppointment, updateAppointment } from '../api/schedule'
+import { useCan } from '../auth/hooks'
 import AttachmentsPanel from './AttachmentsPanel'
 import type { CalendarEvent } from '../data/calendarEvents'
 import type { Patient } from '../types/clinic'
@@ -13,6 +14,8 @@ interface AppointmentDetailsModalProps {
   appointment: Appointment
   onClose: () => void
   onUpdated: (appointment: Appointment) => void
+  /** Called with the ids of every appointment deleted. */
+  onDeleted: (appointmentIds: string[]) => void
 }
 
 const categoryStyles = {
@@ -32,8 +35,27 @@ export default function AppointmentDetailsModal({
   appointment,
   onClose,
   onUpdated,
+  onDeleted,
 }: AppointmentDetailsModalProps) {
+  const canDelete = useCan('editRecords')
   const [isEditing, setIsEditing] = useState(false)
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const laterInCourse = appointment.treatment
+    ? appointment.treatment.stepCount - appointment.treatment.stepNumber
+    : 0
+
+  async function handleDelete(scope: 'this' | 'following') {
+    setIsDeleting(true)
+    setError(null)
+    try {
+      const { deleted } = await deleteAppointment(appointment.id, scope)
+      onDeleted(deleted)
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete appointment')
+      setIsDeleting(false)
+    }
+  }
   // Controlled so the choice survives the patient list loading in later.
   const [selectedPatientId, setSelectedPatientId] = useState(
     appointment.patientId,
@@ -383,22 +405,81 @@ export default function AppointmentDetailsModal({
                 />
               </div>
 
-              <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-5">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="rounded-lg border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+              {isConfirmingDelete ? (
+                <div
+                  role="alertdialog"
+                  aria-labelledby="delete-appointment-title"
+                  className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4"
                 >
-                  Close
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void beginEditing()}
-                  className="rounded-lg bg-teal-600 px-4 py-2 font-semibold text-white hover:bg-teal-700"
-                >
-                  Edit appointment
-                </button>
-              </div>
+                  <p id="delete-appointment-title" className="font-bold text-red-900">
+                    Delete this appointment?
+                  </p>
+                  <p className="mt-1 text-sm text-red-800">
+                    This can&apos;t be undone. Files and medical history linked to it stay on{' '}
+                    {appointment.patientName}&apos;s record.
+                    {laterInCourse > 0 &&
+                      ` It is appointment ${appointment.treatment!.stepNumber} of ${appointment.treatment!.stepCount} of ${appointment.treatment!.name}.`}
+                  </p>
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsConfirmingDelete(false)}
+                      disabled={isDeleting}
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Keep it
+                    </button>
+                    {laterInCourse > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void handleDelete('following')}
+                        disabled={isDeleting}
+                        className="rounded-lg border border-red-300 bg-white px-4 py-2 font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                      >
+                        Delete this and the later ones
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleDelete('this')}
+                      disabled={isDeleting}
+                      className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                    >
+                      {isDeleting
+                        ? 'Deleting…'
+                        : laterInCourse > 0
+                          ? 'Delete only this one'
+                          : 'Delete appointment'}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-5">
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={() => setIsConfirmingDelete(true)}
+                      className="mr-auto rounded-lg border border-slate-200 px-4 py-2 font-semibold text-slate-500 hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                    >
+                      Delete
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-lg border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void beginEditing()}
+                    className="rounded-lg bg-teal-600 px-4 py-2 font-semibold text-white hover:bg-teal-700"
+                  >
+                    Edit appointment
+                  </button>
+                </div>
+              )}
             </>
           )}
         </div>
