@@ -13,7 +13,13 @@ import {
   getTreatments,
   previewTreatment,
 } from '../api/schedule'
-import { CLOSED_DAY_MESSAGE, describeTreatment, isWeekendKey } from '../lib/clinicCalendar'
+import {
+  dayWarnings,
+  describeDayWarnings,
+  describeTreatment,
+  hasDayWarning,
+  type ClosedDayMap,
+} from '../lib/clinicCalendar'
 import type { Owner, Patient } from '../types/clinic'
 import type {
   Appointment,
@@ -25,6 +31,10 @@ import { ACCEPTED_FILES, formatBytes, prepareFile } from '../utils/files'
 
 interface AppointmentFormProps {
   initialDate?: string
+  /** Holidays and other closed dates, with their reason. */
+  closedDays?: ClosedDayMap
+  /** A date the person already confirmed booking on (past, weekend or closed). */
+  confirmedDate?: string
   onCancel: () => void
   /**
    * All appointments created (several for a treatment course). `uploadWarning`
@@ -45,8 +55,12 @@ const speciesOptions = [
   'OTHER',
 ]
 
+const noClosedDays: ClosedDayMap = new Map()
+
 export default function AppointmentForm({
   initialDate,
+  closedDays = noClosedDays,
+  confirmedDate,
   onCancel,
   onCreated,
 }: AppointmentFormProps) {
@@ -70,7 +84,20 @@ export default function AppointmentForm({
   const [isPreviewing, setIsPreviewing] = useState(false)
 
   const selectedTreatment = treatments.find((treatment) => treatment.id === treatmentId)
-  const isWeekendDate = Boolean(dateValue) && isWeekendKey(dateValue)
+  /** The date the person confirmed booking on despite a warning. */
+  const [confirmedFor, setConfirmedFor] = useState<string | null>(confirmedDate ?? null)
+  const warnings = dateValue ? dayWarnings(dateValue, closedDays) : null
+  const startsAtValue = dateValue && timeValue ? new Date(`${dateValue}T${timeValue}:00`) : null
+  // "Now" as of when the form opened (render must not read the clock).
+  const [openedAt] = useState(() => Date.now())
+  const isPastTime = Boolean(startsAtValue && startsAtValue.getTime() < openedAt)
+  const isClosedDay = Boolean(warnings && (warnings.isWeekend || warnings.closedReason !== null))
+  const needsConfirmation = isPastTime || isClosedDay
+  const isConfirmed = needsConfirmation && confirmedFor === dateValue
+  const warningSentences = warnings && dateValue ? describeDayWarnings(dateValue, warnings) : []
+  if (isPastTime && warnings && !warnings.isPastDay) {
+    warningSentences.push('That time today has already passed.')
+  }
 
   useEffect(() => {
     let isActive = true
@@ -95,9 +122,11 @@ export default function AppointmentForm({
     if (!treatmentId || !dateValue || !timeValue) return
     let isActive = true
     const timer = setTimeout(() => {
-      if (isWeekendKey(dateValue)) {
+      if (hasDayWarning(dayWarnings(dateValue, closedDays))) {
         setPreview(null)
-        setPreviewError(CLOSED_DAY_MESSAGE)
+        setPreviewError(
+          'A treatment course must start on a day the clinic is open: not in the past, at a weekend or on a closed date.',
+        )
         return
       }
       const startsAt = new Date(`${dateValue}T${timeValue}:00`)
@@ -127,7 +156,7 @@ export default function AppointmentForm({
       isActive = false
       clearTimeout(timer)
     }
-  }, [treatmentId, dateValue, timeValue, durationValue])
+  }, [treatmentId, dateValue, timeValue, durationValue, closedDays])
 
   useEffect(() => {
     let isActive = true
@@ -168,11 +197,10 @@ export default function AppointmentForm({
       const startsAt = new Date(
         `${requiredValue(form, 'appointmentDate')}T${requiredValue(form, 'appointmentTime')}:00`,
       )
-      if (startsAt.getTime() < Date.now()) {
-        throw new Error('Choose a date and time in the future.')
-      }
-      if (isWeekendKey(requiredValue(form, 'appointmentDate'))) {
-        throw new Error(CLOSED_DAY_MESSAGE)
+      if (needsConfirmation && !isConfirmed && !treatmentId) {
+        throw new Error(
+          'Confirm that you want to book on this date (see the warning under the date).',
+        )
       }
 
       // Check and resize files first so a bad file never leaves a
@@ -275,6 +303,8 @@ export default function AppointmentForm({
               'category',
             ) as 'APPOINTMENT' | 'TREATMENT' | 'REPRODUCTION',
             ...(details && { details }),
+            ...(isConfirmed && isPastTime && { allowPast: true }),
+            ...(isConfirmed && isClosedDay && { allowClosedDay: true }),
           }),
         ]
       }
@@ -545,17 +575,12 @@ export default function AppointmentForm({
               name="appointmentDate"
               type="date"
               required
-              min={localDateKey(new Date())}
+              {...(selectedTreatment && { min: localDateKey(new Date()) })}
               value={dateValue}
               onChange={(event) => setDateValue(event.target.value)}
-              aria-invalid={isWeekendDate || undefined}
-              className={`${inputStyles} ${isWeekendDate ? 'border-amber-400' : ''}`}
+              aria-invalid={(needsConfirmation && !isConfirmed) || undefined}
+              className={`${inputStyles} ${needsConfirmation ? 'border-amber-400' : ''}`}
             />
-            {isWeekendDate && (
-              <span className="block text-sm font-medium text-amber-700">
-                {CLOSED_DAY_MESSAGE}
-              </span>
-            )}
           </Field>
           <Field label={selectedTreatment ? 'First appointment time' : 'Time'}>
             <input
@@ -589,6 +614,24 @@ export default function AppointmentForm({
             </select>
           </Field>
         </div>
+
+        {needsConfirmation && !selectedTreatment && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            {warningSentences.map((sentence) => (
+              <p key={sentence}>{sentence}</p>
+            ))}
+            <label className="mt-3 flex items-start gap-2 font-semibold">
+              <input
+                type="checkbox"
+                name="confirmDate"
+                checked={isConfirmed}
+                onChange={(event) => setConfirmedFor(event.target.checked ? dateValue : null)}
+                className="mt-0.5 h-4 w-4 accent-amber-600"
+              />
+              Yes, book on this date anyway
+            </label>
+          </div>
+        )}
 
         {selectedTreatment && (
           <TreatmentPreview

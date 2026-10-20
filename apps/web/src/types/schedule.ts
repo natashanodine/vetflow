@@ -73,7 +73,21 @@ export interface ScheduleRules {
   workingDays: number[]
 }
 
-export interface CreateAppointmentInput {
+/** Sent after the person confirmed a warning about the date. */
+export interface BookingConfirmations {
+  /** Book on a weekend or a closed date. */
+  allowClosedDay?: boolean
+  /** Record an appointment in the past. */
+  allowPast?: boolean
+}
+
+/** A date the clinic is closed, "YYYY-MM-DD". */
+export interface ClosedDay {
+  date: string
+  reason: string | null
+}
+
+export interface CreateAppointmentInput extends BookingConfirmations {
   patientId: string
   title: string
   details?: string
@@ -82,7 +96,7 @@ export interface CreateAppointmentInput {
   category?: AppointmentCategory
 }
 
-export interface UpdateAppointmentInput {
+export interface UpdateAppointmentInput extends BookingConfirmations {
   patientId?: string
   title?: string
   details?: string

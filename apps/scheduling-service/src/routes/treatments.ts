@@ -4,10 +4,10 @@ import {
   CLOSES_AT,
   OPENS_AT,
   formatClock,
-  isOnWorkingDay,
   isWithinOpeningHours,
   scheduleRules,
 } from '../lib/clinicHours.js'
+import { closureOn, describeClosure } from '../lib/closedDays.js'
 import { fetchPatient } from '../lib/clinic.js'
 import { requireEditor } from '../lib/requester.js'
 import { planSeries } from '../lib/series.js'
@@ -95,15 +95,18 @@ function hasAllGaps(body: TreatmentBody, reply: FastifyReply) {
 }
 
 /** Checks the first appointment's time; replies with 400 and returns false if invalid. */
-function validateFirstStart(startsAt: Date, durationMinutes: number, reply: FastifyReply) {
+async function validateFirstStart(startsAt: Date, durationMinutes: number, reply: FastifyReply) {
   if (Number.isNaN(startsAt.getTime()) || startsAt.getTime() < Date.now() - 60_000) {
-    void reply.status(400).send({ message: 'Choose a date and time in the future.' })
-    return false
-  }
-  if (!isOnWorkingDay(startsAt)) {
     void reply
       .status(400)
-      .send({ message: 'The clinic is closed on Saturdays and Sundays. Choose a weekday.' })
+      .send({ message: 'A treatment course must start at a date and time in the future.' })
+    return false
+  }
+  const closure = await closureOn(startsAt)
+  if (closure) {
+    void reply.status(400).send({
+      message: `${describeClosure(closure)}. A treatment course must start on a day the clinic is open.`,
+    })
     return false
   }
   if (!isWithinOpeningHours(startsAt, durationMinutes)) {
@@ -204,7 +207,7 @@ export const treatmentRoutes: FastifyPluginAsync = async (app) => {
 
       const startsAt = new Date(request.body.startsAt)
       const durationMinutes = request.body.durationMinutes ?? 30
-      if (!validateFirstStart(startsAt, durationMinutes, reply)) return
+      if (!(await validateFirstStart(startsAt, durationMinutes, reply))) return
 
       const plan = await planSeries(treatment, startsAt, durationMinutes)
       return { treatment: serializeTreatment(treatment), appointments: plan }
@@ -221,7 +224,7 @@ export const treatmentRoutes: FastifyPluginAsync = async (app) => {
 
       const startsAt = new Date(request.body.startsAt)
       const durationMinutes = request.body.durationMinutes ?? 30
-      if (!validateFirstStart(startsAt, durationMinutes, reply)) return
+      if (!(await validateFirstStart(startsAt, durationMinutes, reply))) return
 
       const lookup = await fetchPatient(request.body.patientId ?? '')
       if ('missing' in lookup) return reply.status(400).send({ message: 'Patient does not exist' })

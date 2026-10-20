@@ -2,6 +2,7 @@ import { request } from './http'
 import { jsonRequest } from './http'
 import type {
   Appointment,
+  ClosedDay,
   CreateAppointmentInput,
   PlannedAppointment,
   ScheduleRules,
@@ -118,4 +119,20 @@ export function deleteAppointment(
   scope: 'this' | 'following' = 'this',
 ): Promise<{ deleted: string[] }> {
   return apiRequest(`/appointments/${appointmentId}?scope=${scope}`, { method: 'DELETE' })
+}
+
+export function getClosedDays(): Promise<ClosedDay[]> {
+  return apiRequest<ClosedDay[]>('/closed-days')
+}
+
+/** Marks a date closed (or changes its reason). */
+export function setClosedDay(
+  date: string,
+  reason: string,
+): Promise<ClosedDay & { appointmentsThatDay: number }> {
+  return apiRequest(`/closed-days/${date}`, jsonRequest('PUT', reason ? { reason } : {}))
+}
+
+export function reopenDay(date: string): Promise<void> {
+  return apiRequest<void>(`/closed-days/${date}`, { method: 'DELETE' })
 }

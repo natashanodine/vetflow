@@ -165,3 +165,24 @@ export function serializeTreatment(treatment: TreatmentDoc) {
     updatedAt: treatment.updatedAt,
   }
 }
+
+/** A date the clinic is closed (holiday etc.), as "YYYY-MM-DD" in clinic time. */
+export interface ClosedDayDoc {
+  _id: string
+  reason?: string
+  createdAt: Date
+}
+
+const closedDaySchema = new Schema<ClosedDayDoc>(
+  {
+    _id: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
+    reason: { type: String, maxlength: 120 },
+  },
+  { timestamps: { createdAt: true, updatedAt: false }, versionKey: false },
+)
+
+export const ClosedDay = model<ClosedDayDoc>('ClosedDay', closedDaySchema, 'closed_days')
+
+export function serializeClosedDay(closedDay: ClosedDayDoc) {
+  return { date: closedDay._id, reason: closedDay.reason ?? null }
+}

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getPatients } from '../api/clinic'
+import { ApiError } from '../api/http'
 import { deleteAppointment, updateAppointment } from '../api/schedule'
 import { useCan } from '../auth/hooks'
 import AttachmentsPanel from './AttachmentsPanel'
 import type { CalendarEvent } from '../data/calendarEvents'
 import type { Patient } from '../types/clinic'
-import type { Appointment } from '../types/schedule'
-import { CLOSED_DAY_MESSAGE, isWeekend } from '../lib/clinicCalendar'
+import type { Appointment, UpdateAppointmentInput } from '../types/schedule'
 
 interface AppointmentDetailsModalProps {
   event: CalendarEvent
@@ -41,6 +41,36 @@ export default function AppointmentDetailsModal({
   const [isEditing, setIsEditing] = useState(false)
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  /** The server asked to confirm a past or closed date; holds the save to retry. */
+  const [dateConfirmation, setDateConfirmation] = useState<{
+    message: string
+    input: UpdateAppointmentInput
+  } | null>(null)
+
+  async function save(input: UpdateAppointmentInput) {
+    setIsSaving(true)
+    setError(null)
+    try {
+      const updatedAppointment = await updateAppointment(appointment.id, input)
+      setDateConfirmation(null)
+      onUpdated(updatedAppointment)
+      setIsEditing(false)
+    } catch (saveError) {
+      if (saveError instanceof ApiError && (saveError.code === 'PAST' || saveError.code === 'CLOSED_DAY')) {
+        setDateConfirmation({
+          message: saveError.message,
+          input: {
+            ...input,
+            ...(saveError.code === 'PAST' ? { allowPast: true } : { allowClosedDay: true }),
+          },
+        })
+      } else {
+        setError(saveError instanceof Error ? saveError.message : 'Unable to update appointment')
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }
   const laterInCourse = appointment.treatment
     ? appointment.treatment.stepCount - appointment.treatment.stepNumber
     : 0
@@ -117,17 +147,10 @@ export default function AppointmentDetailsModal({
       ) as CalendarEvent['status']
 
       const startsAt = new Date(`${appointmentDate}T${appointmentTime}:00`)
-      const toMinute = (date: Date) => Math.floor(date.getTime() / 60_000)
-      const isRescheduled =
-        toMinute(startsAt) !== toMinute(new Date(appointment.startsAt))
-      if (isRescheduled && startsAt.getTime() < Date.now()) {
-        throw new Error('Choose a date and time in the future.')
-      }
-      if (isRescheduled && isWeekend(startsAt)) {
-        throw new Error(CLOSED_DAY_MESSAGE)
-      }
 
-      const updatedAppointment = await updateAppointment(appointment.id, {
+      // Past and closed dates are checked by the server, which asks to confirm.
+      setIsSaving(false)
+      await save({
         patientId: requiredValue(form, 'patientId'),
         title,
         details,
@@ -136,9 +159,6 @@ export default function AppointmentDetailsModal({
         category,
         status,
       })
-
-      onUpdated(updatedAppointment)
-      setIsEditing(false)
     } catch (saveError) {
       setError(
         saveError instanceof Error
@@ -151,7 +171,6 @@ export default function AppointmentDetailsModal({
   }
 
   const dateTime = localDateAndTime(new Date(appointment.startsAt))
-  const todayKey = localDateAndTime(new Date()).date
 
   return (
     <div
@@ -262,9 +281,6 @@ export default function AppointmentDetailsModal({
                     name="appointmentDate"
                     type="date"
                     required
-                    min={
-                      dateTime.date >= todayKey ? todayKey : undefined
-                    }
                     defaultValue={dateTime.date}
                     disabled={isSaving}
                     className={inputStyles}
@@ -309,11 +325,42 @@ export default function AppointmentDetailsModal({
                 </Field>
               </div>
 
+              {dateConfirmation && (
+                <div
+                  role="alertdialog"
+                  aria-labelledby="date-confirmation-title"
+                  className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+                >
+                  <p id="date-confirmation-title" className="font-bold">
+                    Save on this date?
+                  </p>
+                  <p className="mt-1">{dateConfirmation.message}</p>
+                  <div className="mt-3 flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDateConfirmation(null)}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Change the date
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => void save(dateConfirmation.input)}
+                      className="rounded-lg bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700 disabled:opacity-60"
+                    >
+                      {isSaving ? 'Saving…' : 'Save anyway'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="mt-6 flex justify-end gap-3 border-t border-slate-200 pt-5">
                 <button
                   type="button"
                   onClick={() => {
                     setError(null)
+                    setDateConfirmation(null)
                     setIsEditing(false)
                   }}
                   className="rounded-lg border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"

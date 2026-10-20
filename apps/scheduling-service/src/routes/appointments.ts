@@ -1,10 +1,48 @@
-import type { FastifyPluginAsync } from 'fastify'
-import { isOnWorkingDay } from '../lib/clinicHours.js'
+import type { FastifyPluginAsync, FastifyReply } from 'fastify'
+import { closureOn, describeClosure } from '../lib/closedDays.js'
 import { requireEditor } from '../lib/requester.js'
 import { Appointment, serializeAppointment } from '../models/index.js'
 
-const CLOSED_DAY_MESSAGE =
-  'The clinic is closed on Saturdays and Sundays. Choose a weekday.'
+/** Confirmations the web app sends after warning the user. */
+interface BookingConfirmations {
+  /** The person confirmed booking on a weekend or closed date. */
+  allowClosedDay?: boolean
+  /** The person confirmed recording an appointment in the past. */
+  allowPast?: boolean
+}
+
+const confirmationProperties = {
+  allowClosedDay: { type: 'boolean' },
+  allowPast: { type: 'boolean' },
+}
+
+/**
+ * Past times and days the clinic is closed need an explicit confirmation.
+ * Replies 400 (with a `code` the web app can react to) and returns false if
+ * one is missing.
+ */
+async function checkBookingDate(
+  startsAt: Date,
+  confirmations: BookingConfirmations,
+  reply: FastifyReply,
+) {
+  if (isInPast(startsAt) && !confirmations.allowPast) {
+    void reply.status(400).send({
+      code: 'PAST',
+      message: 'That date and time is in the past. Confirm to record a past appointment.',
+    })
+    return false
+  }
+  const closure = await closureOn(startsAt)
+  if (closure && !confirmations.allowClosedDay) {
+    void reply.status(400).send({
+      code: 'CLOSED_DAY',
+      message: `${describeClosure(closure)}. Confirm to book on that day anyway.`,
+    })
+    return false
+  }
+  return true
+}
 
 type AppointmentCategory = 'APPOINTMENT' | 'TREATMENT' | 'REPRODUCTION'
 type AppointmentStatus = 'SCHEDULED' | 'COMPLETED' | 'CANCELLED'
@@ -28,7 +66,7 @@ function clinicHeaders() {
   return { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' }
 }
 
-interface CreateAppointmentBody {
+interface CreateAppointmentBody extends BookingConfirmations {
   patientId: string
   title: string
   details?: string
@@ -41,7 +79,7 @@ interface AppointmentParams {
   appointmentId: string
 }
 
-interface UpdateAppointmentBody {
+interface UpdateAppointmentBody extends BookingConfirmations {
   patientId?: string
   title?: string
   details?: string
@@ -130,6 +168,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
             patientId: { type: 'string', minLength: 36, maxLength: 36 },
             title: { type: 'string', minLength: 1, maxLength: 160 },
             details: { type: 'string', maxLength: 5000 },
+            ...confirmationProperties,
             startsAt: { type: 'string', format: 'date-time' },
             durationMinutes: { type: 'integer', minimum: 5, maximum: 1440 },
             category: {
@@ -143,14 +182,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     async (request, reply) => {
       const clinicServiceUrl =
         process.env.CLINIC_SERVICE_URL ?? 'http://localhost:3001'
-      if (isInPast(new Date(request.body.startsAt))) {
-        return reply
-          .status(400)
-          .send({ message: 'Appointments cannot be booked in the past.' })
-      }
-      if (!isOnWorkingDay(new Date(request.body.startsAt))) {
-        return reply.status(400).send({ message: CLOSED_DAY_MESSAGE })
-      }
+      if (!(await checkBookingDate(new Date(request.body.startsAt), request.body, reply))) return
 
       const patientResponse = await fetch(
         `${clinicServiceUrl}/patients/${request.body.patientId}`,
@@ -209,6 +241,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
             patientId: { type: 'string', minLength: 36, maxLength: 36 },
             title: { type: 'string', minLength: 1, maxLength: 160 },
             details: { type: 'string', maxLength: 5000 },
+            ...confirmationProperties,
             startsAt: { type: 'string', format: 'date-time' },
             durationMinutes: { type: 'integer', minimum: 5, maximum: 1440 },
             category: {
@@ -236,14 +269,7 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         const startsAt = new Date(request.body.startsAt)
         const isRescheduled =
           toMinute(startsAt) !== toMinute(existingAppointment.startsAt)
-        if (isRescheduled && isInPast(startsAt)) {
-          return reply
-            .status(400)
-            .send({ message: 'Appointments cannot be moved into the past.' })
-        }
-        if (isRescheduled && !isOnWorkingDay(startsAt)) {
-          return reply.status(400).send({ message: CLOSED_DAY_MESSAGE })
-        }
+        if (isRescheduled && !(await checkBookingDate(startsAt, request.body, reply))) return
       }
 
       let patient: ClinicPatient | undefined

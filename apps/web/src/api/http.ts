@@ -5,10 +5,13 @@
  */
 export class ApiError extends Error {
   readonly status: number
+  /** Machine-readable reason from the server, e.g. "CLOSED_DAY" or "PAST". */
+  readonly code: string | undefined
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message)
     this.status = status
+    this.code = code
   }
 }
 
@@ -27,6 +30,7 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const body = (await response.json().catch(() => null)) as {
       message?: string
       reason?: string
+      code?: string
     } | null
 
     if (response.status === 401 && body?.reason) {
@@ -36,6 +40,7 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ApiError(
       body?.message ?? `Request failed with status ${response.status}`,
       response.status,
+      body?.code,
     )
   }
 

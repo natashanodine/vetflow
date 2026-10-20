@@ -1,6 +1,10 @@
+import { closedDaysBetween, planningWindow } from './closedDays.js'
 import {
   addDays,
+  dayKey,
   findFreeSlot,
+  isWeekendDay,
+  nextWorkingDay,
   fromClinicTime,
   nearestWorkingDay,
   toClinicTime,
@@ -16,7 +20,7 @@ export interface PlannedAppointment {
   /** The date the interval alone would give, before any adjustment. */
   plannedFor: Date
   /** Why the appointment isn't at the planned time, if it was moved. */
-  movedBecause: 'weekend' | 'clash' | null
+  movedBecause: 'weekend' | 'closed' | 'clash' | null
 }
 
 /** Days after the previous appointment for step `index` (0 for the first). */
@@ -57,6 +61,8 @@ export async function planSeries(
   const lastPlanned = addDays(first.day, totalDays + 60)
   const lastInstant = new Date(Date.UTC(lastPlanned.year, lastPlanned.month - 1, lastPlanned.day))
   const busy = await busyPeriods(firstStart, lastInstant)
+  const window = planningWindow(first.day, totalDays)
+  const closed = await closedDaysBetween(window.from, window.to)
 
   const plan: PlannedAppointment[] = []
   for (const [index, step] of treatment.steps.entries()) {
@@ -64,7 +70,10 @@ export async function planSeries(
     const idealDay = previousPlaced
       ? addDays(toClinicTime(previousPlaced.startsAt).day, gapInDays(treatment, index))
       : first.day
-    const day = nearestWorkingDay(idealDay)
+    let day = nearestWorkingDay(idealDay)
+    // A holiday (closed date) moves on to the next open day.
+    if (closed.has(dayKey(day))) day = nextWorkingDay(day, closed)
+    const dayReason = isWeekendDay(idealDay) ? 'weekend' : closed.has(dayKey(idealDay)) ? 'closed' : null
     const plannedFor = fromClinicTime(idealDay, first.minutes)
     // Each appointment must come after the previous one.
     const previous = plan.at(-1)
@@ -72,7 +81,7 @@ export async function planSeries(
       ? previous.startsAt.getTime() + durationMinutes * 60_000
       : Date.now()
 
-    const startsAt = findFreeSlot(day, first.minutes, durationMinutes, busy, notBefore)
+    const startsAt = findFreeSlot(day, first.minutes, durationMinutes, busy, notBefore, closed)
     if (!startsAt) {
       throw new Error(`No free time found for appointment ${index + 1}.`)
     }
@@ -86,7 +95,11 @@ export async function planSeries(
       description: step.description ?? null,
       startsAt,
       plannedFor,
-      movedBecause: atPlannedTime ? null : movedDay && sameClinicTime(startsAt, day, first.minutes) ? 'weekend' : 'clash',
+      movedBecause: atPlannedTime
+        ? null
+        : movedDay && sameClinicTime(startsAt, day, first.minutes)
+          ? (dayReason ?? 'weekend')
+          : 'clash',
     })
   }
   return plan

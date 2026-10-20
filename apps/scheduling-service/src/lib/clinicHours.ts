@@ -75,17 +75,33 @@ export function weekday(day: ClinicDay) {
   return new Date(Date.UTC(day.year, day.month - 1, day.day)).getUTCDay()
 }
 
-export function isWorkingDay(day: ClinicDay) {
-  return WORKING_DAYS.includes(weekday(day))
+/** "YYYY-MM-DD" for a clinic day. */
+export function dayKey(day: ClinicDay) {
+  return `${day.year}-${String(day.month).padStart(2, '0')}-${String(day.day).padStart(2, '0')}`
+}
+
+export function parseDayKey(key: string): ClinicDay {
+  const [year, month, day] = key.split('-').map(Number) as [number, number, number]
+  return { year, month, day }
+}
+
+/** Open: a weekday that isn't in `closed` (holidays, as day keys). */
+export function isWorkingDay(day: ClinicDay, closed: ReadonlySet<string> = new Set()) {
+  return WORKING_DAYS.includes(weekday(day)) && !closed.has(dayKey(day))
+}
+
+export function isWeekendDay(day: ClinicDay) {
+  return !WORKING_DAYS.includes(weekday(day))
 }
 
 export function isOnWorkingDay(date: Date) {
   return isWorkingDay(toClinicTime(date).day)
 }
 
+/** Within opening hours on its day (whether or not that day is open). */
 export function isWithinOpeningHours(start: Date, durationMinutes: number) {
-  const { day, minutes } = toClinicTime(start)
-  return isWorkingDay(day) && minutes >= OPENS_AT && minutes + durationMinutes <= CLOSES_AT
+  const { minutes } = toClinicTime(start)
+  return minutes >= OPENS_AT && minutes + durationMinutes <= CLOSES_AT
 }
 
 /** Saturday moves back to Friday, Sunday forward to Monday. */
@@ -96,9 +112,9 @@ export function nearestWorkingDay(day: ClinicDay) {
   return day
 }
 
-export function nextWorkingDay(day: ClinicDay) {
+export function nextWorkingDay(day: ClinicDay, closed: ReadonlySet<string> = new Set()) {
   let next = addDays(day, 1)
-  while (!isWorkingDay(next)) next = addDays(next, 1)
+  for (let i = 0; i < 366 && !isWorkingDay(next, closed); i++) next = addDays(next, 1)
   return next
 }
 
@@ -125,18 +141,19 @@ export function findFreeSlot(
   durationMinutes: number,
   busy: BusyPeriod[],
   notBefore: number,
+  closed: ReadonlySet<string> = new Set(),
 ) {
   let current = day
   let from = Math.max(fromMinutes, OPENS_AT)
   for (let attempt = 0; attempt < 120; attempt++) {
-    if (isWorkingDay(current)) {
+    if (isWorkingDay(current, closed)) {
       for (let minutes = from; minutes + durationMinutes <= CLOSES_AT; minutes += SLOT_STEP) {
         const start = fromClinicTime(current, minutes).getTime()
         const end = start + durationMinutes * 60_000
         if (start >= notBefore && !overlaps(start, end, busy)) return new Date(start)
       }
     }
-    current = nextWorkingDay(current)
+    current = nextWorkingDay(current, closed)
     from = OPENS_AT
   }
   return null

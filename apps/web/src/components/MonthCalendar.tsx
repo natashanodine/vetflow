@@ -1,13 +1,21 @@
 import { useMemo, useState } from 'react'
 import type { CalendarEvent } from '../data/calendarEvents'
 import { addDays, toDateKey } from '../data/calendarEvents'
-import { isWeekend } from '../lib/clinicCalendar'
+import { isWeekend, type ClosedDayMap } from '../lib/clinicCalendar'
 
 interface MonthCalendarProps {
   events: CalendarEvent[]
+  /**
+   * Called for any day clicked, including past, weekend and closed days
+   * (which look unavailable; the page asks before booking on them).
+   */
   onDateSelect?: (dateKey: string) => void
   onEventSelect?: (event: CalendarEvent) => void
+  /** Holidays and other closed dates, with their reason. */
+  closedDays?: ClosedDayMap
 }
+
+const noClosedDays: ClosedDayMap = new Map()
 
 const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -21,6 +29,7 @@ export default function MonthCalendar({
   events,
   onDateSelect,
   onEventSelect,
+  closedDays = noClosedDays,
 }: MonthCalendarProps) {
   const today = useMemo(() => new Date(), [])
   const [visibleMonth, setVisibleMonth] = useState(
@@ -76,7 +85,8 @@ export default function MonthCalendar({
           </div>
           {onDateSelect && (
             <p className="mt-2 text-xs font-medium text-teal-700">
-              Select a weekday from today onwards to add an appointment. The clinic is closed on weekends.
+              Select a day to add an appointment. Grey days are in the past, at the
+              weekend or closed; you&apos;ll be asked before booking on them.
             </p>
           )}
         </div>
@@ -129,9 +139,13 @@ export default function MonthCalendar({
                 date.getMonth() === visibleMonth.getMonth()
               const isToday = dateKey === toDateKey(today)
               const isPast = dateKey < toDateKey(today)
-              const isClosed = isWeekend(date)
+              const closedReason = closedDays.has(dateKey)
+                ? (closedDays.get(dateKey) ?? '')
+                : null
+              const isClosed = isWeekend(date) || closedReason !== null
+              // Unavailable days stay clickable but look unavailable.
               const isBlocked = isPast || isClosed
-              const canSelect = Boolean(onDateSelect) && !isBlocked
+              const canSelect = Boolean(onDateSelect)
 
               return (
                 <div
@@ -140,6 +154,7 @@ export default function MonthCalendar({
                   tabIndex={canSelect ? 0 : undefined}
                   data-past={isPast || undefined}
                   data-closed={isClosed || undefined}
+                  data-holiday={closedReason !== null || undefined}
                   aria-label={
                     canSelect
                       ? `Add appointment on ${new Intl.DateTimeFormat(
@@ -167,21 +182,27 @@ export default function MonthCalendar({
                     }
                   }}
                   title={
-                    onDateSelect && isPast
-                      ? 'Past dates cannot be booked'
-                      : onDateSelect && isClosed
-                        ? 'Closed on weekends'
-                        : undefined
+                    closedReason
+                      ? `Closed: ${closedReason}`
+                      : closedReason === ''
+                        ? 'Closed'
+                        : onDateSelect && isPast
+                          ? 'In the past'
+                          : onDateSelect && isClosed
+                            ? 'Weekend'
+                            : undefined
                   }
                   className={`min-h-32 border-b border-r border-slate-100 p-2 text-left outline-none ${
                     isBlocked && onDateSelect
-                      ? 'cursor-not-allowed bg-slate-100/80'
+                      ? 'bg-slate-100/80'
                       : isCurrentMonth
                         ? 'bg-white'
                         : 'bg-slate-50/70'
                   } ${
                     canSelect
-                      ? 'cursor-pointer hover:bg-teal-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500'
+                      ? `cursor-pointer focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500 ${
+                          isBlocked ? 'hover:bg-slate-200/60' : 'hover:bg-teal-50'
+                        }`
                       : ''
                   }`}
                 >
@@ -198,6 +219,11 @@ export default function MonthCalendar({
                   >
                     {date.getDate()}
                   </div>
+                  {closedReason !== null && (
+                    <p className="-mt-1 mb-1 truncate text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                      Closed{closedReason ? ` · ${closedReason}` : ''}
+                    </p>
+                  )}
 
                   <div className="space-y-1">
                     {dayEvents.slice(0, 3).map((event) => (

@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
-import { getAppointments } from '../../api/schedule'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { getAppointments, getClosedDays } from '../../api/schedule'
 import AppointmentForm from '../../components/AppointmentForm'
 import AppointmentDetailsModal from '../../components/AppointmentDetailsModal'
 import CalendarEventList from '../../components/CalendarEventList'
+import ClosedDatesPanel from '../../components/ClosedDatesPanel'
+import DayWarningDialog from '../../components/DayWarningDialog'
 import MonthCalendar from '../../components/MonthCalendar'
+import { dayWarnings, hasDayWarning } from '../../lib/clinicCalendar'
 import {
   addDays,
   appointmentToCalendarEvent,
   getEventsBetween,
 } from '../../data/calendarEvents'
 import type { CalendarEvent } from '../../data/calendarEvents'
-import type { Appointment } from '../../types/schedule'
+import type { Appointment, ClosedDay } from '../../types/schedule'
 
 export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -19,6 +22,21 @@ export default function AgendaPage() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [uploadWarning, setUploadWarning] = useState<string | null>(null)
+  const [closedDays, setClosedDays] = useState<ClosedDay[]>([])
+  /** A past, weekend or closed day the person clicked; asks before booking. */
+  const [pendingDate, setPendingDate] = useState<string | null>(null)
+  /** A day the person already confirmed booking on despite the warning. */
+  const [confirmedDate, setConfirmedDate] = useState<string>()
+  const closedDayMap = useMemo(
+    () => new Map(closedDays.map((day) => [day.date, day.reason])),
+    [closedDays],
+  )
+
+  function openFormOn(dateKey: string, confirmed: boolean) {
+    setSelectedDate(dateKey)
+    setConfirmedDate(confirmed ? dateKey : undefined)
+    setIsAddingAppointment(true)
+  }
   const formContainerRef = useRef<HTMLDivElement>(null)
   const today = new Date()
   const displayEvents = appointments.map(appointmentToCalendarEvent)
@@ -46,6 +64,12 @@ export default function AgendaPage() {
             : 'Unable to load saved appointments',
         )
       })
+
+    getClosedDays()
+      .then((data) => {
+        if (isActive) setClosedDays(data)
+      })
+      .catch(() => undefined)
 
     return () => {
       isActive = false
@@ -109,6 +133,8 @@ export default function AgendaPage() {
           <AppointmentForm
             key={selectedDate ?? 'manual-appointment'}
             initialDate={selectedDate}
+            closedDays={closedDayMap}
+            {...(confirmedDate && { confirmedDate })}
             onCancel={() => setIsAddingAppointment(false)}
             onCreated={(created, warning) => {
               setUploadWarning(warning ?? null)
@@ -123,11 +149,29 @@ export default function AgendaPage() {
       <MonthCalendar
         events={displayEvents}
         onEventSelect={setSelectedEvent}
+        closedDays={closedDayMap}
         onDateSelect={(dateKey) => {
-          setSelectedDate(dateKey)
-          setIsAddingAppointment(true)
+          if (hasDayWarning(dayWarnings(dateKey, closedDayMap))) {
+            setPendingDate(dateKey)
+          } else {
+            openFormOn(dateKey, false)
+          }
         }}
       />
+
+      {pendingDate && (
+        <DayWarningDialog
+          dateKey={pendingDate}
+          warnings={dayWarnings(pendingDate, closedDayMap)}
+          onCancel={() => setPendingDate(null)}
+          onContinue={() => {
+            openFormOn(pendingDate, true)
+            setPendingDate(null)
+          }}
+        />
+      )}
+
+      <ClosedDatesPanel closedDays={closedDays} onChange={setClosedDays} />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-bold text-slate-900">
