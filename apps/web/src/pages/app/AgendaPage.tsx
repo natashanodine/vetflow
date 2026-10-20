@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getAppointments, getClosedDays } from '../../api/schedule'
+import { getAppointments, getClosedDays, getScheduleRules } from '../../api/schedule'
 import AppointmentForm from '../../components/AppointmentForm'
 import AppointmentDetailsModal from '../../components/AppointmentDetailsModal'
 import CalendarEventList from '../../components/CalendarEventList'
 import ClosedDatesPanel from '../../components/ClosedDatesPanel'
 import DayWarningDialog from '../../components/DayWarningDialog'
 import MonthCalendar from '../../components/MonthCalendar'
-import { dayWarnings, hasDayWarning } from '../../lib/clinicCalendar'
+import WorkingHoursPanel from '../../components/WorkingHoursPanel'
+import { dayWarnings, hasDayWarning, openWeekdaysOf } from '../../lib/clinicCalendar'
 import {
   addDays,
   appointmentToCalendarEvent,
   getEventsBetween,
 } from '../../data/calendarEvents'
 import type { CalendarEvent } from '../../data/calendarEvents'
-import type { Appointment, ClosedDay } from '../../types/schedule'
+import type { Appointment, ClosedDay, ScheduleRules } from '../../types/schedule'
 
 export default function AgendaPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([])
@@ -27,6 +28,8 @@ export default function AgendaPage() {
   const [pendingDate, setPendingDate] = useState<string | null>(null)
   /** A day the person already confirmed booking on despite the warning. */
   const [confirmedDate, setConfirmedDate] = useState<string>()
+  const [rules, setRules] = useState<ScheduleRules | null>(null)
+  const openWeekdays = useMemo(() => openWeekdaysOf(rules), [rules])
   const closedDayMap = useMemo(
     () => new Map(closedDays.map((day) => [day.date, day.reason])),
     [closedDays],
@@ -68,6 +71,12 @@ export default function AgendaPage() {
     getClosedDays()
       .then((data) => {
         if (isActive) setClosedDays(data)
+      })
+      .catch(() => undefined)
+
+    getScheduleRules()
+      .then((data) => {
+        if (isActive) setRules(data)
       })
       .catch(() => undefined)
 
@@ -134,6 +143,7 @@ export default function AgendaPage() {
             key={selectedDate ?? 'manual-appointment'}
             initialDate={selectedDate}
             closedDays={closedDayMap}
+            rules={rules}
             {...(confirmedDate && { confirmedDate })}
             onCancel={() => setIsAddingAppointment(false)}
             onCreated={(created, warning) => {
@@ -150,8 +160,9 @@ export default function AgendaPage() {
         events={displayEvents}
         onEventSelect={setSelectedEvent}
         closedDays={closedDayMap}
+        openWeekdays={openWeekdays}
         onDateSelect={(dateKey) => {
-          if (hasDayWarning(dayWarnings(dateKey, closedDayMap))) {
+          if (hasDayWarning(dayWarnings(dateKey, closedDayMap, openWeekdays))) {
             setPendingDate(dateKey)
           } else {
             openFormOn(dateKey, false)
@@ -162,7 +173,7 @@ export default function AgendaPage() {
       {pendingDate && (
         <DayWarningDialog
           dateKey={pendingDate}
-          warnings={dayWarnings(pendingDate, closedDayMap)}
+          warnings={dayWarnings(pendingDate, closedDayMap, openWeekdays)}
           onCancel={() => setPendingDate(null)}
           onContinue={() => {
             openFormOn(pendingDate, true)
@@ -170,6 +181,8 @@ export default function AgendaPage() {
           }}
         />
       )}
+
+      <WorkingHoursPanel rules={rules} onChange={setRules} />
 
       <ClosedDatesPanel closedDays={closedDays} onChange={setClosedDays} />
 

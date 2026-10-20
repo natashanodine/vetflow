@@ -3,6 +3,7 @@ import { jsonRequest } from './http'
 import type {
   Appointment,
   ClosedDay,
+  DayHours,
   CreateAppointmentInput,
   PlannedAppointment,
   ScheduleRules,
@@ -69,6 +70,11 @@ export function updateAppointment(
 
 export function getScheduleRules(): Promise<ScheduleRules> {
   return apiRequest<ScheduleRules>('/schedule-rules')
+}
+
+/** Admins only. Returns the saved rules. */
+export function saveClinicHours(days: DayHours[]): Promise<ScheduleRules> {
+  return apiRequest<ScheduleRules>('/clinic-hours', jsonRequest('PUT', { days }))
 }
 
 export function getTreatments(): Promise<Treatment[]> {

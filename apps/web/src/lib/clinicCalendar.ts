@@ -1,19 +1,75 @@
-import type { IntervalUnit, Treatment } from '../types/schedule'
+import type { DayHours, IntervalUnit, ScheduleRules, Treatment } from '../types/schedule'
 
-/** Saturday or Sunday: the clinic is closed and no appointments can be booked. */
-export function isWeekend(date: Date) {
-  const day = date.getDay()
-  return day === 0 || day === 6
+/** Days of the week the clinic opens (0 = Sunday … 6 = Saturday). */
+export type OpenWeekdays = ReadonlySet<number>
+
+/** Until the hours load: Monday to Friday. */
+export const DEFAULT_OPEN_WEEKDAYS: OpenWeekdays = new Set([1, 2, 3, 4, 5])
+
+export function openWeekdaysOf(rules: ScheduleRules | null): OpenWeekdays {
+  if (!rules) return DEFAULT_OPEN_WEEKDAYS
+  return new Set(rules.days.filter((day) => day.open).map((day) => day.weekday))
 }
 
-/** isWeekend for a "YYYY-MM-DD" date key. */
-export function isWeekendKey(dateKey: string) {
+function keyToDate(dateKey: string) {
   const [year, month, day] = dateKey.split('-').map(Number)
-  return isWeekend(new Date(year!, month! - 1, day))
+  return new Date(year!, month! - 1, day)
 }
 
-export const CLOSED_DAY_MESSAGE =
-  'The clinic is closed on Saturdays and Sundays. Choose a weekday.'
+/** A day of the week the clinic is normally closed (e.g. Sundays). */
+export function isRegularlyClosed(date: Date, openWeekdays: OpenWeekdays = DEFAULT_OPEN_WEEKDAYS) {
+  return !openWeekdays.has(date.getDay())
+}
+
+/** That date's hours, or null before the hours load. */
+export function hoursOnDate(rules: ScheduleRules | null, dateKey: string): DayHours | null {
+  if (!rules) return null
+  const weekday = keyToDate(dateKey).getDay()
+  return rules.days.find((day) => day.weekday === weekday) ?? null
+}
+
+function toMinutes(clock: string) {
+  const [hours, minutes] = clock.split(':').map(Number)
+  return (hours ?? 0) * 60 + (minutes ?? 0)
+}
+
+/** The appointment starts before opening or ends after closing that day. */
+export function isOutsideHours(hours: DayHours | null, time: string, durationMinutes: number) {
+  if (!hours || !hours.open || !time) return false
+  const start = toMinutes(time)
+  return start < toMinutes(hours.opensAt) || start + durationMinutes > toMinutes(hours.closesAt)
+}
+
+const SHORT_DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+/** Monday first, as the hours are listed. */
+export const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0]
+
+/** e.g. "Mon–Fri 09:00–18:00 · Sat 09:00–13:00" */
+export function summarizeHours(days: DayHours[]) {
+  const byWeekday = new Map(days.map((day) => [day.weekday, day]))
+  const groups: { first: number; last: number; hours: string }[] = []
+  for (const weekday of WEEK_ORDER) {
+    const day = byWeekday.get(weekday)
+    if (!day?.open) continue
+    const hours = `${day.opensAt}–${day.closesAt}`
+    const previous = groups.at(-1)
+    const lastIndex = previous ? WEEK_ORDER.indexOf(previous.last) : -2
+    if (previous && previous.hours === hours && WEEK_ORDER.indexOf(weekday) === lastIndex + 1) {
+      previous.last = weekday
+    } else {
+      groups.push({ first: weekday, last: weekday, hours })
+    }
+  }
+  if (groups.length === 0) return 'Closed every day'
+  return groups
+    .map((group) =>
+      group.first === group.last
+        ? `${SHORT_DAY[group.first]} ${group.hours}`
+        : `${SHORT_DAY[group.first]}–${SHORT_DAY[group.last]} ${group.hours}`,
+    )
+    .join(' · ')
+}
 
 /** Closed dates by "YYYY-MM-DD", with their reason (or null). */
 export type ClosedDayMap = ReadonlyMap<string, string | null>
@@ -26,21 +82,26 @@ export function todayKey() {
 export interface DayWarnings {
   /** The whole day is before today. */
   isPastDay: boolean
-  isWeekend: boolean
+  /** A day of the week the clinic is normally closed. */
+  isRegularlyClosed: boolean
   /** Set when the date is marked closed; empty string if no reason was given. */
   closedReason: string | null
 }
 
-export function dayWarnings(dateKey: string, closedDays: ClosedDayMap): DayWarnings {
+export function dayWarnings(
+  dateKey: string,
+  closedDays: ClosedDayMap,
+  openWeekdays: OpenWeekdays = DEFAULT_OPEN_WEEKDAYS,
+): DayWarnings {
   return {
     isPastDay: dateKey < todayKey(),
-    isWeekend: isWeekendKey(dateKey),
+    isRegularlyClosed: isRegularlyClosed(keyToDate(dateKey), openWeekdays),
     closedReason: closedDays.has(dateKey) ? (closedDays.get(dateKey) ?? '') : null,
   }
 }
 
 export function hasDayWarning(warnings: DayWarnings) {
-  return warnings.isPastDay || warnings.isWeekend || warnings.closedReason !== null
+  return warnings.isPastDay || warnings.isRegularlyClosed || warnings.closedReason !== null
 }
 
 export function formatDayKey(dateKey: string) {
@@ -66,8 +127,8 @@ export function describeDayWarnings(dateKey: string, warnings: DayWarnings) {
         : 'The clinic is marked closed on this date.',
     )
   }
-  if (warnings.isWeekend) {
-    sentences.push(`This is a ${weekdayName}, when the clinic is normally closed.`)
+  if (warnings.isRegularlyClosed) {
+    sentences.push(`This is a ${weekdayName}. The clinic is normally closed on ${weekdayName}s.`)
   }
   if (warnings.isPastDay) {
     sentences.push(

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   createOwnerWithPatient,
   createPatient,
@@ -18,6 +18,9 @@ import {
   describeDayWarnings,
   describeTreatment,
   hasDayWarning,
+  hoursOnDate,
+  isOutsideHours,
+  openWeekdaysOf,
   type ClosedDayMap,
 } from '../lib/clinicCalendar'
 import type { Owner, Patient } from '../types/clinic'
@@ -35,6 +38,8 @@ interface AppointmentFormProps {
   closedDays?: ClosedDayMap
   /** A date the person already confirmed booking on (past, weekend or closed). */
   confirmedDate?: string
+  /** The clinic's opening hours; loaded by the form when not given. */
+  rules?: ScheduleRules | null
   onCancel: () => void
   /**
    * All appointments created (several for a treatment course). `uploadWarning`
@@ -61,6 +66,7 @@ export default function AppointmentForm({
   initialDate,
   closedDays = noClosedDays,
   confirmedDate,
+  rules: givenRules,
   onCancel,
   onCreated,
 }: AppointmentFormProps) {
@@ -74,7 +80,9 @@ export default function AppointmentForm({
   const [files, setFiles] = useState<File[]>([])
   const [submitStep, setSubmitStep] = useState<string | null>(null)
   const [treatments, setTreatments] = useState<Treatment[]>([])
-  const [rules, setRules] = useState<ScheduleRules | null>(null)
+  const [loadedRules, setLoadedRules] = useState<ScheduleRules | null>(null)
+  const rules = givenRules ?? loadedRules
+  const openWeekdays = useMemo(() => openWeekdaysOf(rules), [rules])
   const [treatmentId, setTreatmentId] = useState('')
   const [dateValue, setDateValue] = useState(() => defaultAppointmentDate(initialDate))
   const [timeValue, setTimeValue] = useState(() => defaultAppointmentTime(initialDate))
@@ -86,12 +94,14 @@ export default function AppointmentForm({
   const selectedTreatment = treatments.find((treatment) => treatment.id === treatmentId)
   /** The date the person confirmed booking on despite a warning. */
   const [confirmedFor, setConfirmedFor] = useState<string | null>(confirmedDate ?? null)
-  const warnings = dateValue ? dayWarnings(dateValue, closedDays) : null
+  const warnings = dateValue ? dayWarnings(dateValue, closedDays, openWeekdays) : null
+  const dayHours = dateValue ? hoursOnDate(rules, dateValue) : null
+  const isOutsideOpeningHours = isOutsideHours(dayHours, timeValue, Number(durationValue))
   const startsAtValue = dateValue && timeValue ? new Date(`${dateValue}T${timeValue}:00`) : null
   // "Now" as of when the form opened (render must not read the clock).
   const [openedAt] = useState(() => Date.now())
   const isPastTime = Boolean(startsAtValue && startsAtValue.getTime() < openedAt)
-  const isClosedDay = Boolean(warnings && (warnings.isWeekend || warnings.closedReason !== null))
+  const isClosedDay = Boolean(warnings && (warnings.isRegularlyClosed || warnings.closedReason !== null))
   const needsConfirmation = isPastTime || isClosedDay
   const isConfirmed = needsConfirmation && confirmedFor === dateValue
   const warningSentences = warnings && dateValue ? describeDayWarnings(dateValue, warnings) : []
@@ -107,14 +117,17 @@ export default function AppointmentForm({
         if (isActive) setTreatments(data)
       })
       .catch(() => undefined)
-    getScheduleRules()
-      .then((data) => {
-        if (isActive) setRules(data)
-      })
-      .catch(() => undefined)
+    if (!givenRules) {
+      getScheduleRules()
+        .then((data) => {
+          if (isActive) setLoadedRules(data)
+        })
+        .catch(() => undefined)
+    }
     return () => {
       isActive = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once when the form opens
   }, [])
 
   // Shows the dates a treatment course would get, whenever its inputs change.
@@ -122,10 +135,10 @@ export default function AppointmentForm({
     if (!treatmentId || !dateValue || !timeValue) return
     let isActive = true
     const timer = setTimeout(() => {
-      if (hasDayWarning(dayWarnings(dateValue, closedDays))) {
+      if (hasDayWarning(dayWarnings(dateValue, closedDays, openWeekdays))) {
         setPreview(null)
         setPreviewError(
-          'A treatment course must start on a day the clinic is open: not in the past, at a weekend or on a closed date.',
+          'A treatment course must start on a day the clinic is open: not in the past, on a day it is normally closed or on a closed date.',
         )
         return
       }
@@ -156,7 +169,7 @@ export default function AppointmentForm({
       isActive = false
       clearTimeout(timer)
     }
-  }, [treatmentId, dateValue, timeValue, durationValue, closedDays])
+  }, [treatmentId, dateValue, timeValue, durationValue, closedDays, openWeekdays])
 
   useEffect(() => {
     let isActive = true
@@ -589,12 +602,20 @@ export default function AppointmentForm({
               required
               value={timeValue}
               onChange={(event) => setTimeValue(event.target.value)}
-              {...(selectedTreatment && rules && { min: rules.opensAt, max: rules.closesAt })}
-              className={inputStyles}
+              {...(selectedTreatment && dayHours?.open && { min: dayHours.opensAt, max: dayHours.closesAt })}
+              aria-describedby="appointment-hours"
+              className={`${inputStyles} ${isOutsideOpeningHours ? 'border-amber-400' : ''}`}
             />
-            {selectedTreatment && rules && (
-              <span className="block text-xs text-slate-500">
-                Opening hours {rules.opensAt}–{rules.closesAt}, Monday to Friday.
+            {dayHours && (
+              <span
+                id="appointment-hours"
+                className={`block text-xs ${isOutsideOpeningHours ? 'font-semibold text-amber-700' : 'text-slate-500'}`}
+              >
+                {!dayHours.open
+                  ? `Normally closed on ${weekdayLabel(dayHours.weekday)}s.`
+                  : isOutsideOpeningHours
+                    ? `Outside opening hours (${dayHours.opensAt}–${dayHours.closesAt} on ${weekdayLabel(dayHours.weekday)}s).`
+                    : `Open ${dayHours.opensAt}–${dayHours.closesAt} on ${weekdayLabel(dayHours.weekday)}s.`}
               </span>
             )}
           </Field>
@@ -787,8 +808,8 @@ function TreatmentPreview({
               </span>
               {item.movedBecause && (
                 <span className="basis-full pl-9 text-xs text-amber-700">
-                  {item.movedBecause === 'weekend'
-                    ? `Moved from ${formatDate(item.plannedFor)} (weekend)`
+                  {item.movedBecause === 'weekend' || item.movedBecause === 'closed'
+                    ? `Moved from ${formatDate(item.plannedFor)} (${item.movedBecause === 'weekend' ? 'weekend' : 'clinic closed'})`
                     : `Moved from ${formatDate(item.plannedFor)}, ${formatTime(item.plannedFor)} (that time is taken)`}
                 </span>
               )}
@@ -906,3 +927,7 @@ function formatSelectedDate(dateKey: string) {
 
 const inputStyles =
   'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100'
+
+function weekdayLabel(weekday: number) {
+  return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][weekday]
+}

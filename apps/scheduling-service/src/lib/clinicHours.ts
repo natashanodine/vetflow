@@ -2,8 +2,10 @@
  * Clinic opening hours and calendar rules, worked out in the clinic's own
  * time zone (the servers run in UTC).
  *
- * Settings (environment): CLINIC_TIME_ZONE (default America/Guayaquil) and
- * CLINIC_HOURS (default "09:00-18:00"). Open Monday to Friday.
+ * Opening hours are set per day of the week by an admin in the agenda (stored
+ * in the database, see weeklyHours.ts). Until then the defaults come from
+ * CLINIC_HOURS (default "09:00-18:00"), Monday to Friday.
+ * CLINIC_TIME_ZONE (default America/Guayaquil) sets the clinic's time zone.
  */
 export const CLINIC_TIME_ZONE = process.env.CLINIC_TIME_ZONE ?? 'America/Guayaquil'
 
@@ -14,12 +16,27 @@ function parseHours(value: string) {
   return { start: sh * 60 + sm, end: eh * 60 + em }
 }
 
-const hours = parseHours(process.env.CLINIC_HOURS ?? '09:00-18:00')
-/** Opening and closing time, in minutes after midnight (clinic time). */
-export const OPENS_AT = hours.start
-export const CLOSES_AT = hours.end
-/** Days the clinic is open: 1 = Monday … 5 = Friday. */
-export const WORKING_DAYS = [1, 2, 3, 4, 5]
+/** One day of the week's hours. Times are minutes after midnight (clinic time). */
+export interface DayHours {
+  /** 0 = Sunday … 6 = Saturday */
+  weekday: number
+  open: boolean
+  opensAt: number
+  closesAt: number
+}
+
+/** Seven entries, indexed by weekday (0 = Sunday). */
+export type WeeklyHours = readonly DayHours[]
+
+export function defaultWeeklyHours(): DayHours[] {
+  const { start, end } = parseHours(process.env.CLINIC_HOURS ?? '09:00-18:00')
+  return Array.from({ length: 7 }, (_, weekday) => ({
+    weekday,
+    open: weekday >= 1 && weekday <= 5,
+    opensAt: start,
+    closesAt: end,
+  }))
+}
 
 /** Minutes between candidate start times when looking for a free slot. */
 const SLOT_STEP = 15
@@ -85,36 +102,54 @@ export function parseDayKey(key: string): ClinicDay {
   return { year, month, day }
 }
 
-/** Open: a weekday that isn't in `closed` (holidays, as day keys). */
-export function isWorkingDay(day: ClinicDay, closed: ReadonlySet<string> = new Set()) {
-  return WORKING_DAYS.includes(weekday(day)) && !closed.has(dayKey(day))
+function hoursOn(day: ClinicDay, hours: WeeklyHours) {
+  return hours[weekday(day)] ?? { weekday: weekday(day), open: false, opensAt: 0, closesAt: 0 }
 }
 
-export function isWeekendDay(day: ClinicDay) {
-  return !WORKING_DAYS.includes(weekday(day))
+/** Open: the clinic opens that day of the week and it isn't in `closed` (holidays). */
+export function isWorkingDay(
+  day: ClinicDay,
+  hours: WeeklyHours,
+  closed: ReadonlySet<string> = new Set(),
+) {
+  return hoursOn(day, hours).open && !closed.has(dayKey(day))
 }
 
-export function isOnWorkingDay(date: Date) {
-  return isWorkingDay(toClinicTime(date).day)
+/** Closed every week on this day (e.g. Sundays), regardless of holidays. */
+export function isRegularlyClosed(day: ClinicDay, hours: WeeklyHours) {
+  return !hoursOn(day, hours).open
 }
 
-/** Within opening hours on its day (whether or not that day is open). */
-export function isWithinOpeningHours(start: Date, durationMinutes: number) {
-  const { minutes } = toClinicTime(start)
-  return minutes >= OPENS_AT && minutes + durationMinutes <= CLOSES_AT
+/** Within that day's opening hours. */
+export function isWithinOpeningHours(start: Date, durationMinutes: number, hours: WeeklyHours) {
+  const { day, minutes } = toClinicTime(start)
+  const today = hoursOn(day, hours)
+  return today.open && minutes >= today.opensAt && minutes + durationMinutes <= today.closesAt
 }
 
-/** Saturday moves back to Friday, Sunday forward to Monday. */
-export function nearestWorkingDay(day: ClinicDay) {
-  const dow = weekday(day)
-  if (dow === 6) return addDays(day, -1)
-  if (dow === 0) return addDays(day, 1)
+/**
+ * The nearest day the clinic is regularly open, checking the day before
+ * first at each distance (so Saturday goes to Friday, Sunday to Monday when
+ * open Monday to Friday).
+ */
+export function nearestWorkingDay(day: ClinicDay, hours: WeeklyHours) {
+  if (!isRegularlyClosed(day, hours)) return day
+  for (let distance = 1; distance <= 6; distance++) {
+    const before = addDays(day, -distance)
+    if (!isRegularlyClosed(before, hours)) return before
+    const after = addDays(day, distance)
+    if (!isRegularlyClosed(after, hours)) return after
+  }
   return day
 }
 
-export function nextWorkingDay(day: ClinicDay, closed: ReadonlySet<string> = new Set()) {
+export function nextWorkingDay(
+  day: ClinicDay,
+  hours: WeeklyHours,
+  closed: ReadonlySet<string> = new Set(),
+) {
   let next = addDays(day, 1)
-  for (let i = 0; i < 366 && !isWorkingDay(next, closed); i++) next = addDays(next, 1)
+  for (let i = 0; i < 366 && !isWorkingDay(next, hours, closed); i++) next = addDays(next, 1)
   return next
 }
 
@@ -133,7 +168,8 @@ function overlaps(start: number, end: number, busy: BusyPeriod[]) {
 
 /**
  * The first free start time on `day` at or after `fromMinutes` that fits
- * inside opening hours, or on the following working days from opening time.
+ * inside that day's opening hours, or on the following open days from
+ * opening time.
  */
 export function findFreeSlot(
   day: ClinicDay,
@@ -141,29 +177,44 @@ export function findFreeSlot(
   durationMinutes: number,
   busy: BusyPeriod[],
   notBefore: number,
+  hours: WeeklyHours,
   closed: ReadonlySet<string> = new Set(),
 ) {
   let current = day
-  let from = Math.max(fromMinutes, OPENS_AT)
+  let from = fromMinutes
   for (let attempt = 0; attempt < 120; attempt++) {
-    if (isWorkingDay(current, closed)) {
-      for (let minutes = from; minutes + durationMinutes <= CLOSES_AT; minutes += SLOT_STEP) {
+    if (isWorkingDay(current, hours, closed)) {
+      const today = hoursOn(current, hours)
+      for (
+        let minutes = Math.max(from, today.opensAt);
+        minutes + durationMinutes <= today.closesAt;
+        minutes += SLOT_STEP
+      ) {
         const start = fromClinicTime(current, minutes).getTime()
         const end = start + durationMinutes * 60_000
         if (start >= notBefore && !overlaps(start, end, busy)) return new Date(start)
       }
     }
-    current = nextWorkingDay(current, closed)
-    from = OPENS_AT
+    current = nextWorkingDay(current, hours, closed)
+    from = 0
   }
   return null
 }
 
-export function scheduleRules() {
+export function parseClock(value: string) {
+  const [hoursPart, minutesPart] = value.split(':').map(Number)
+  return (hoursPart ?? 0) * 60 + (minutesPart ?? 0)
+}
+
+/** Opening hours as the web app receives them. */
+export function scheduleRules(hours: WeeklyHours) {
   return {
     timeZone: CLINIC_TIME_ZONE,
-    opensAt: formatClock(OPENS_AT),
-    closesAt: formatClock(CLOSES_AT),
-    workingDays: WORKING_DAYS,
+    days: hours.map((day) => ({
+      weekday: day.weekday,
+      open: day.open,
+      opensAt: formatClock(day.opensAt),
+      closesAt: formatClock(day.closesAt),
+    })),
   }
 }

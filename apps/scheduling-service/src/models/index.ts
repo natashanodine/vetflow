@@ -186,3 +186,30 @@ export const ClosedDay = model<ClosedDayDoc>('ClosedDay', closedDaySchema, 'clos
 export function serializeClosedDay(closedDay: ClosedDayDoc) {
   return { date: closedDay._id, reason: closedDay.reason ?? null }
 }
+
+/** The clinic's weekly opening hours (one document, _id 1). */
+export interface ClinicHoursDoc {
+  _id: number
+  days: { weekday: number; open: boolean; opensAt: number; closesAt: number }[]
+  updatedAt: Date
+}
+
+const clinicHoursSchema = new Schema<ClinicHoursDoc>(
+  {
+    _id: { type: Number, default: 1 },
+    days: [
+      new Schema(
+        {
+          weekday: { type: Number, required: true, min: 0, max: 6 },
+          open: { type: Boolean, required: true },
+          opensAt: { type: Number, required: true, min: 0, max: 1440 },
+          closesAt: { type: Number, required: true, min: 0, max: 1440 },
+        },
+        { _id: false },
+      ),
+    ],
+  },
+  { timestamps: { createdAt: false, updatedAt: true }, versionKey: false },
+)
+
+export const ClinicHours = model<ClinicHoursDoc>('ClinicHours', clinicHoursSchema, 'clinic_hours')

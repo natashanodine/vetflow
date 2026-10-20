@@ -61,16 +61,23 @@ export interface PlannedAppointment {
   description: string | null
   startsAt: string
   plannedFor: string
-  movedBecause: 'weekend' | 'clash' | null
+  movedBecause: 'weekend' | 'closed' | 'clash' | null
+}
+
+/** One day of the week's opening hours. */
+export interface DayHours {
+  /** 0 = Sunday … 6 = Saturday */
+  weekday: number
+  open: boolean
+  /** "HH:MM" */
+  opensAt: string
+  closesAt: string
 }
 
 export interface ScheduleRules {
   timeZone: string
-  /** "HH:MM" */
-  opensAt: string
-  closesAt: string
-  /** 1 = Monday … 5 = Friday */
-  workingDays: number[]
+  /** Seven entries, Sunday first. */
+  days: DayHours[]
 }
 
 /** Sent after the person confirmed a warning about the date. */

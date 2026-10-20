@@ -4,6 +4,8 @@ export type ClinicRole = 'ADMIN' | 'VETERINARIAN' | 'STAFF'
 const rules = {
   /** Add, edit and remove clinic users. */
   manageTeam: ['ADMIN'],
+  /** Set the clinic's weekly opening hours. */
+  manageClinicHours: ['ADMIN'],
   /** Edit patients and owners, write medical history, delete files. */
   editRecords: ['ADMIN', 'VETERINARIAN'],
 } as const satisfies Record<string, readonly ClinicRole[]>

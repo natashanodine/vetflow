@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import type { FastifyPluginAsync, FastifyReply } from 'fastify'
 import {
-  CLOSES_AT,
-  OPENS_AT,
   formatClock,
   isWithinOpeningHours,
   scheduleRules,
+  toClinicTime,
+  weekday,
 } from '../lib/clinicHours.js'
+import { getWeeklyHours } from '../lib/weeklyHours.js'
 import { closureOn, describeClosure } from '../lib/closedDays.js'
 import { fetchPatient } from '../lib/clinic.js'
 import { requireEditor } from '../lib/requester.js'
@@ -109,9 +110,11 @@ async function validateFirstStart(startsAt: Date, durationMinutes: number, reply
     })
     return false
   }
-  if (!isWithinOpeningHours(startsAt, durationMinutes)) {
+  const hours = await getWeeklyHours()
+  if (!isWithinOpeningHours(startsAt, durationMinutes, hours)) {
+    const today = hours[weekday(toClinicTime(startsAt).day)]!
     void reply.status(400).send({
-      message: `Treatment appointments must be between ${formatClock(OPENS_AT)} and ${formatClock(CLOSES_AT)}, finishing by closing time.`,
+      message: `On that day the clinic is open ${formatClock(today.opensAt)}–${formatClock(today.closesAt)}. Treatment appointments must fit inside opening hours.`,
     })
     return false
   }
@@ -132,7 +135,7 @@ const scheduleBodySchema = {
 
 export const treatmentRoutes: FastifyPluginAsync = async (app) => {
   /** Opening hours and days, so the web app can block closed times. */
-  app.get('/schedule-rules', async () => scheduleRules())
+  app.get('/schedule-rules', async () => scheduleRules(await getWeeklyHours()))
 
   app.get('/treatments', async () => {
     const treatments = await Treatment.find().sort({ name: 1 }).lean()

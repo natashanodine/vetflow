@@ -3,14 +3,16 @@ import {
   addDays,
   dayKey,
   findFreeSlot,
-  isWeekendDay,
+  isRegularlyClosed,
   nextWorkingDay,
+  weekday,
   fromClinicTime,
   nearestWorkingDay,
   toClinicTime,
   type BusyPeriod,
 } from './clinicHours.js'
 import { Appointment, stepGap, type TreatmentDoc } from '../models/index.js'
+import { getWeeklyHours } from './weeklyHours.js'
 
 export interface PlannedAppointment {
   stepNumber: number
@@ -63,6 +65,7 @@ export async function planSeries(
   const busy = await busyPeriods(firstStart, lastInstant)
   const window = planningWindow(first.day, totalDays)
   const closed = await closedDaysBetween(window.from, window.to)
+  const hours = await getWeeklyHours()
 
   const plan: PlannedAppointment[] = []
   for (const [index, step] of treatment.steps.entries()) {
@@ -70,10 +73,17 @@ export async function planSeries(
     const idealDay = previousPlaced
       ? addDays(toClinicTime(previousPlaced.startsAt).day, gapInDays(treatment, index))
       : first.day
-    let day = nearestWorkingDay(idealDay)
+    let day = nearestWorkingDay(idealDay, hours)
     // A holiday (closed date) moves on to the next open day.
-    if (closed.has(dayKey(day))) day = nextWorkingDay(day, closed)
-    const dayReason = isWeekendDay(idealDay) ? 'weekend' : closed.has(dayKey(idealDay)) ? 'closed' : null
+    if (closed.has(dayKey(day))) day = nextWorkingDay(day, hours, closed)
+    const isWeekend = weekday(idealDay) === 0 || weekday(idealDay) === 6
+    const dayReason = isRegularlyClosed(idealDay, hours)
+      ? isWeekend
+        ? 'weekend'
+        : 'closed'
+      : closed.has(dayKey(idealDay))
+        ? 'closed'
+        : null
     const plannedFor = fromClinicTime(idealDay, first.minutes)
     // Each appointment must come after the previous one.
     const previous = plan.at(-1)
@@ -81,7 +91,7 @@ export async function planSeries(
       ? previous.startsAt.getTime() + durationMinutes * 60_000
       : Date.now()
 
-    const startsAt = findFreeSlot(day, first.minutes, durationMinutes, busy, notBefore, closed)
+    const startsAt = findFreeSlot(day, first.minutes, durationMinutes, busy, notBefore, hours, closed)
     if (!startsAt) {
       throw new Error(`No free time found for appointment ${index + 1}.`)
     }

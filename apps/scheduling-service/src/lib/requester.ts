@@ -15,3 +15,12 @@ export function requireEditor(
   }
   return true
 }
+
+/** Only admins (e.g. to change the clinic's opening hours). */
+export function requireAdmin(request: FastifyRequest, reply: FastifyReply, message: string) {
+  if (request.headers['x-user-role'] !== 'ADMIN') {
+    void reply.status(403).send({ message })
+    return false
+  }
+  return true
+}

@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react'
 import type { CalendarEvent } from '../data/calendarEvents'
 import { addDays, toDateKey } from '../data/calendarEvents'
-import { isWeekend, type ClosedDayMap } from '../lib/clinicCalendar'
+import {
+  DEFAULT_OPEN_WEEKDAYS,
+  isRegularlyClosed,
+  type ClosedDayMap,
+  type OpenWeekdays,
+} from '../lib/clinicCalendar'
 
 interface MonthCalendarProps {
   events: CalendarEvent[]
@@ -13,6 +18,8 @@ interface MonthCalendarProps {
   onEventSelect?: (event: CalendarEvent) => void
   /** Holidays and other closed dates, with their reason. */
   closedDays?: ClosedDayMap
+  /** Days of the week the clinic opens; the others look unavailable. */
+  openWeekdays?: OpenWeekdays
 }
 
 const noClosedDays: ClosedDayMap = new Map()
@@ -30,6 +37,7 @@ export default function MonthCalendar({
   onDateSelect,
   onEventSelect,
   closedDays = noClosedDays,
+  openWeekdays = DEFAULT_OPEN_WEEKDAYS,
 }: MonthCalendarProps) {
   const today = useMemo(() => new Date(), [])
   const [visibleMonth, setVisibleMonth] = useState(
@@ -85,8 +93,8 @@ export default function MonthCalendar({
           </div>
           {onDateSelect && (
             <p className="mt-2 text-xs font-medium text-teal-700">
-              Select a day to add an appointment. Grey days are in the past, at the
-              weekend or closed; you&apos;ll be asked before booking on them.
+              Select a day to add an appointment. Grey days are in the past or the
+              clinic is closed; you&apos;ll be asked before booking on them.
             </p>
           )}
         </div>
@@ -142,7 +150,7 @@ export default function MonthCalendar({
               const closedReason = closedDays.has(dateKey)
                 ? (closedDays.get(dateKey) ?? '')
                 : null
-              const isClosed = isWeekend(date) || closedReason !== null
+              const isClosed = isRegularlyClosed(date, openWeekdays) || closedReason !== null
               // Unavailable days stay clickable but look unavailable.
               const isBlocked = isPast || isClosed
               const canSelect = Boolean(onDateSelect)

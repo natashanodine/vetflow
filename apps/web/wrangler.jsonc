@@ -17,7 +17,10 @@
   "vars": {
     // The Render URL of the gateway service. Change it if Render gave your
     // service a different address.
-    "API_ORIGIN": "https://equora-gateway.onrender.com"
+    "API_ORIGIN": "https://equora-gateway.onrender.com",
+    // Services woken directly by this Worker before signing in (Render's free
+    // plan only wakes a sleeping service for requests from outside Render).
+    "WAKE_URLS": "https://equora-gateway.onrender.com,https://equora-identity.onrender.com,https://equora-clinic.onrender.com,https://equora-scheduling.onrender.com"
   },
   "observability": { "enabled": true }
 }
