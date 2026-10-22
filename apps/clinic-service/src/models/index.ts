@@ -56,6 +56,7 @@ export interface PatientDoc {
   isNeutered: boolean
   dateOfBirth?: Date
   color?: string
+  weightKg?: number
   microchip?: string
   /** User id (identity-service) of the vet responsible for this patient. */
   responsibleVetId?: string
@@ -74,6 +75,7 @@ const patientSchema = new Schema<PatientDoc>(
     isNeutered: { type: Boolean, default: false },
     dateOfBirth: { type: Date },
     color: { type: String, maxlength: 100 },
+    weightKg: { type: Number, min: 0, max: 2000 },
     microchip: { type: String, maxlength: 100, unique: true, sparse: true },
     responsibleVetId: { type: String, index: true },
   },
@@ -185,6 +187,7 @@ export function serializePatient(patient: PatientDoc) {
     isNeutered: patient.isNeutered,
     dateOfBirth: patient.dateOfBirth ?? null,
     color: patient.color ?? null,
+    weightKg: patient.weightKg ?? null,
     microchip: patient.microchip ?? null,
     responsibleVetId: patient.responsibleVetId ?? null,
     createdAt: patient.createdAt,

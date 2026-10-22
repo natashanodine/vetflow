@@ -28,6 +28,7 @@ interface CreatePatientBody {
   name: string
   species: Species
   breed?: string
+  weightKg?: number
   sex?: Sex
   isNeutered?: boolean
   dateOfBirth?: string
@@ -48,6 +49,7 @@ interface UpdatePatientBody {
   name?: string
   species?: Species
   breed?: string
+  weightKg?: number | null
   sex?: Sex
   isNeutered?: boolean
   /** Empty string clears it */
@@ -135,6 +137,7 @@ export const patientRoutes: FastifyPluginAsync = async (app) => {
               type: 'string',
               maxLength: 100,
             },
+            weightKg: { type: 'number', minimum: 0, maximum: 2000 },
             sex: {
               type: 'string',
               enum: ['MALE', 'FEMALE', 'UNKNOWN'],
@@ -179,6 +182,7 @@ export const patientRoutes: FastifyPluginAsync = async (app) => {
             sex: body.sex ?? 'UNKNOWN',
             isNeutered: body.isNeutered ?? false,
             breed: body.breed,
+            weightKg: body.weightKg ?? null,
             dateOfBirth:
               body.dateOfBirth === undefined ? undefined : toDate(body.dateOfBirth),
             color: body.color,
@@ -237,6 +241,7 @@ export const patientRoutes: FastifyPluginAsync = async (app) => {
                   ],
                 },
                 breed: { type: 'string', maxLength: 100 },
+                weightKg: { type: 'number', minimum: 0, maximum: 2000 },
                 sex: {
                   type: 'string',
                   enum: ['MALE', 'FEMALE', 'UNKNOWN'],
@@ -270,17 +275,18 @@ export const patientRoutes: FastifyPluginAsync = async (app) => {
         try {
           const patient = await Patient.create(
             withoutEmpty({
-            ownerId: owner._id,
-            name: patientBody.name,
-            species: patientBody.species,
-            sex: patientBody.sex ?? 'UNKNOWN',
-            isNeutered: patientBody.isNeutered ?? false,
-            breed: patientBody.breed,
-            dateOfBirth:
-              patientBody.dateOfBirth === undefined ? undefined : toDate(patientBody.dateOfBirth),
-            color: patientBody.color,
-            microchip: patientBody.microchip || undefined,
-          }),
+              ownerId: owner._id,
+              name: patientBody.name,
+              species: patientBody.species,
+              sex: patientBody.sex ?? 'UNKNOWN',
+              isNeutered: patientBody.isNeutered ?? false,
+              breed: patientBody.breed,
+              weightKg: patientBody.weightKg ?? null,
+              dateOfBirth:
+                patientBody.dateOfBirth === undefined ? undefined : toDate(patientBody.dateOfBirth),
+              color: patientBody.color,
+              microchip: patientBody.microchip || undefined,
+            }),
           )
           return reply.status(201).send(await presentPatient(patient.toObject()))
         } catch (error) {
@@ -323,6 +329,7 @@ export const patientRoutes: FastifyPluginAsync = async (app) => {
               enum: ['DOG', 'CAT', 'HORSE', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER'],
             },
             breed: { type: 'string', maxLength: 100 },
+            weightKg: { type: ['number', 'null'], minimum: 0, maximum: 2000 },
             sex: { type: 'string', enum: ['MALE', 'FEMALE', 'UNKNOWN'] },
             isNeutered: { type: 'boolean' },
             dateOfBirth: {
@@ -382,6 +389,7 @@ export const patientRoutes: FastifyPluginAsync = async (app) => {
             sex: body.sex,
             isNeutered: body.isNeutered,
             breed: body.breed === undefined ? undefined : optionalText(body.breed),
+            weightKg: body.weightKg,
             color: body.color === undefined ? undefined : optionalText(body.color),
             microchip:
               body.microchip === undefined ? undefined : optionalText(body.microchip),

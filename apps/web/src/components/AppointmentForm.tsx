@@ -239,6 +239,7 @@ export default function AppointmentForm({
         const breed = optionalValue(form, 'patientBreed')
         const dateOfBirth = optionalValue(form, 'patientDateOfBirth')
         const color = optionalValue(form, 'patientColor')
+        const weight = optionalValue(form, 'patientWeight')
         const microchip = optionalValue(form, 'patientMicrochip')
         const patientInput = {
           name: requiredValue(form, 'patientName'),
@@ -249,6 +250,7 @@ export default function AppointmentForm({
           ...(breed && { breed }),
           ...(dateOfBirth && { dateOfBirth }),
           ...(color && { color }),
+          ...(weight && { weightKg: Number(weight) }),
           ...(microchip && { microchip }),
         }
         let patient: Patient
@@ -466,6 +468,16 @@ export default function AppointmentForm({
               </Field>
               <Field label="Color (optional)">
                 <input name="patientColor" className={inputStyles} />
+              </Field>
+              <Field label="Weight in kg (optional)">
+                <input
+                  name="patientWeight"
+                  type="number"
+                  min={0}
+                  max={2000}
+                  step="0.1"
+                  className={inputStyles}
+                />
               </Field>
               <Field label="Microchip (optional)">
                 <input name="patientMicrochip" className={inputStyles} />

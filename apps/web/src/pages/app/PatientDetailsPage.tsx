@@ -128,7 +128,7 @@ export default function PatientDetailsPage() {
             </div>
           </div>
 
-          <dl className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
+          <dl className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             <Detail
               label="Date of birth"
               value={formatBirthDate(patient.dateOfBirth)}
@@ -137,6 +137,10 @@ export default function PatientDetailsPage() {
             <Detail
               label="Microchip"
               value={patient.microchip ?? 'Not recorded'}
+            />
+            <Detail
+              label="Weight"
+              value={patient.weightKg != null ? `${patient.weightKg} kg` : 'Not recorded'}
             />
             <Detail
               label="Neutered / castrated"
@@ -296,6 +300,7 @@ function PatientEditForm({
         dateOfBirth: text('dateOfBirth'),
         color: text('color'),
         microchip: text('microchip'),
+        weightKg: text('weightKg') ? parseFloat(text('weightKg')) : null,
         responsibleVetId: text('responsibleVetId') || null,
       })
       onSaved(updated)
@@ -404,6 +409,18 @@ function PatientEditForm({
             name="microchip"
             maxLength={100}
             defaultValue={patient.microchip ?? ''}
+            disabled={isSaving}
+            className={inputStyles}
+          />
+        </Field>
+        <Field label="Weight (kg)">
+          <input
+            name="weightKg"
+            type="number"
+            min={0}
+            max={2000}
+            step="0.1"
+            defaultValue={patient.weightKg ?? ''}
             disabled={isSaving}
             className={inputStyles}
           />
@@ -588,11 +605,10 @@ function PageMessage({
 }) {
   return (
     <div
-      className={`rounded-2xl border p-10 text-center shadow-sm ${
-        isError
-          ? 'border-red-200 bg-red-50 text-red-700'
-          : 'border-slate-200 bg-white text-slate-500'
-      }`}
+      className={`rounded-2xl border p-10 text-center shadow-sm ${isError
+        ? 'border-red-200 bg-red-50 text-red-700'
+        : 'border-slate-200 bg-white text-slate-500'
+        }`}
     >
       {message}
     </div>

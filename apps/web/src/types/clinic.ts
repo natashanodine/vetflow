@@ -23,6 +23,7 @@ export interface Patient {
   name: string
   species: string
   breed: string | null
+  weightKg: number | null
   sex: string
   isNeutered: boolean
   dateOfBirth: string | null
@@ -55,6 +56,7 @@ export interface CreatePatientInput {
   sex?: string
   isNeutered?: boolean
   breed?: string
+  weightKg?: number | null
   dateOfBirth?: string
   color?: string
   microchip?: string
@@ -86,6 +88,7 @@ export interface UpdatePatientInput {
   name?: string
   species?: string
   breed?: string
+  weightKg?: number | null
   sex?: string
   isNeutered?: boolean
   dateOfBirth?: string
