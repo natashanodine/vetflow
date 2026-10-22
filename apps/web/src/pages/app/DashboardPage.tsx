@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getActiveMedications } from '../../api/clinic'
 import { getAppointments, getClosedDays, getScheduleRules } from '../../api/schedule'
 import AppointmentDetailsModal from '../../components/AppointmentDetailsModal'
 import AppointmentForm from '../../components/AppointmentForm'
+import CalendarEventList from '../../components/CalendarEventList'
 import {
   addDays,
   appointmentToCalendarEvent,
@@ -12,8 +12,6 @@ import {
 } from '../../data/calendarEvents'
 import type { CalendarEvent } from '../../data/calendarEvents'
 import { dayWarnings, hoursOnDate, openWeekdaysOf } from '../../lib/clinicCalendar'
-import { describeMedication } from '../../lib/medications'
-import type { ActiveMedication } from '../../types/clinic'
 import type { Appointment, ClosedDay, ScheduleRules } from '../../types/schedule'
 
 const categoryStyles = {
@@ -30,21 +28,31 @@ const statusStyles = {
 
 const statusLabels = { SCHEDULED: 'To do', COMPLETED: 'Done', CANCELLED: 'Cancelled' }
 
-/** One day at the clinic: its appointments, plus who is on medication. */
+/** How far back "Needs attention" looks, and ahead for upcoming work. */
+const LOOK_BACK_DAYS = 14
+const LOOK_AHEAD_DAYS = 14
+/** Treatment courses can run for weeks; look further ahead for their next appointment. */
+const COURSE_AHEAD_DAYS = 120
+
+/** One day at the clinic, plus treatments, upcoming work and visits still open. */
 export default function DashboardPage({ clinicName }: { clinicName: string }) {
   const [dayKey, setDayKey] = useState(() => toDateKey(new Date()))
-  const [appointments, setAppointments] = useState<Appointment[]>([])
+  /** Appointments for the chosen day and the overview, by id. */
+  const [appointmentsById, setAppointmentsById] = useState<ReadonlyMap<string, Appointment>>(
+    new Map(),
+  )
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
-  const [medications, setMedications] = useState<ActiveMedication[] | null>(null)
   const [rules, setRules] = useState<ScheduleRules | null>(null)
   const [closedDays, setClosedDays] = useState<ClosedDay[]>([])
+  const [now] = useState(() => Date.now())
   const formRef = useRef<HTMLDivElement>(null)
 
-  const todayKey = toDateKey(new Date())
+  const appointments = useMemo(() => [...appointmentsById.values()], [appointmentsById])
+  const todayKey = toDateKey(new Date(now))
   const isToday = dayKey === todayKey
   const closedDayMap = useMemo(
     () => new Map(closedDays.map((day) => [day.date, day.reason])),
@@ -63,25 +71,48 @@ export default function DashboardPage({ clinicName }: { clinicName: string }) {
   const toDoCount = dayAppointments.filter(
     (appointment) => appointment.status === 'SCHEDULED',
   ).length
-  const comingUp = appointments
+
+  const lookAheadEnd = toDateKey(addDays(fromDateKey(todayKey), LOOK_AHEAD_DAYS))
+  const lookBackStart = toDateKey(addDays(fromDateKey(todayKey), -LOOK_BACK_DAYS))
+  const byTime = (a: Appointment, b: Appointment) => a.startsAt.localeCompare(b.startsAt)
+  const upcoming = appointments
+    .filter((appointment) => {
+      const key = toDateKey(new Date(appointment.startsAt))
+      return appointment.status === 'SCHEDULED' && key > todayKey && key <= lookAheadEnd
+    })
+    .sort(byTime)
+  // Visits whose time has passed but nobody marked them done.
+  const needsAttention = appointments
     .filter(
       (appointment) =>
-        appointment.status === 'SCHEDULED' && toDateKey(new Date(appointment.startsAt)) > dayKey,
+        appointment.status === 'SCHEDULED' &&
+        new Date(appointment.startsAt).getTime() + appointment.durationMinutes * 60_000 < now &&
+        toDateKey(new Date(appointment.startsAt)) >= lookBackStart,
     )
-    .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
-    .slice(0, 6)
+    .sort(byTime)
+  const inTreatment = patientsInTreatment(appointments, now, lookAheadEnd)
 
-  const selectedAppointment = appointments.find((appointment) => appointment.id === selectedId)
+  const selectedAppointment = selectedId ? appointmentsById.get(selectedId) : undefined
 
-  // The chosen day and the week after it (for "Coming up").
+  function merge(list: Appointment[]) {
+    setAppointmentsById((current) => {
+      const next = new Map(current)
+      for (const appointment of list) next.set(appointment.id, appointment)
+      return next
+    })
+  }
+
+  // The overview: the last two weeks to a few months ahead (treatment courses).
   useEffect(() => {
     let isActive = true
-    const from = fromDateKey(dayKey)
-    const to = addDays(from, 8)
-    getAppointments({ from, to })
+    const today = fromDateKey(toDateKey(new Date()))
+    getAppointments({
+      from: addDays(today, -LOOK_BACK_DAYS),
+      to: addDays(today, COURSE_AHEAD_DAYS),
+    })
       .then((data) => {
         if (!isActive) return
-        setAppointments(data)
+        merge(data)
         setLoadError(null)
       })
       .catch((error: unknown) => {
@@ -90,20 +121,6 @@ export default function DashboardPage({ clinicName }: { clinicName: string }) {
       })
       .finally(() => {
         if (isActive) setIsLoading(false)
-      })
-    return () => {
-      isActive = false
-    }
-  }, [dayKey])
-
-  useEffect(() => {
-    let isActive = true
-    getActiveMedications()
-      .then((data) => {
-        if (isActive) setMedications(data)
-      })
-      .catch(() => {
-        if (isActive) setMedications([])
       })
     getScheduleRules()
       .then((data) => {
@@ -120,6 +137,20 @@ export default function DashboardPage({ clinicName }: { clinicName: string }) {
     }
   }, [])
 
+  // The chosen day, when it's outside the overview.
+  useEffect(() => {
+    let isActive = true
+    const from = fromDateKey(dayKey)
+    getAppointments({ from, to: addDays(from, 1) })
+      .then((data) => {
+        if (isActive) merge(data)
+      })
+      .catch(() => undefined)
+    return () => {
+      isActive = false
+    }
+  }, [dayKey])
+
   useEffect(() => {
     if (isAdding) formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [isAdding])
@@ -130,29 +161,7 @@ export default function DashboardPage({ clinicName }: { clinicName: string }) {
     setNotice(null)
   }
 
-  function refreshMedications() {
-    getActiveMedications()
-      .then(setMedications)
-      .catch(() => undefined)
-  }
-
-  // Patients on medication, each with their current medications.
-  const medicatedPatients = useMemo(() => {
-    const byPatient = new Map<
-      string,
-      { patientId: string; patientName: string; items: ActiveMedication[] }
-    >()
-    for (const medication of medications ?? []) {
-      const entry = byPatient.get(medication.patientId) ?? {
-        patientId: medication.patientId,
-        patientName: medication.patientName,
-        items: [],
-      }
-      entry.items.push(medication)
-      byPatient.set(medication.patientId, entry)
-    }
-    return [...byPatient.values()].sort((a, b) => a.patientName.localeCompare(b.patientName))
-  }, [medications])
+  const selectEvent = (event: CalendarEvent) => setSelectedId(event.id)
 
   return (
     <div className="space-y-8">
@@ -257,7 +266,7 @@ export default function DashboardPage({ clinicName }: { clinicName: string }) {
                   rules={rules}
                   onCancel={() => setIsAdding(false)}
                   onCreated={(created, warning) => {
-                    setAppointments((current) => [...current, ...created])
+                    merge(created)
                     setIsAdding(false)
                     setNotice(warning ?? null)
                   }}
@@ -292,74 +301,102 @@ export default function DashboardPage({ clinicName }: { clinicName: string }) {
           </div>
         </section>
 
-        <div className="space-y-6">
-          <section
-            aria-labelledby="medication-title"
-            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-          >
-            <h2 id="medication-title" className="text-lg font-bold text-slate-900">
-              On medication
-            </h2>
-            {medications === null ? (
-              <p className="mt-3 text-sm text-slate-500">Loading…</p>
-            ) : medicatedPatients.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">No patients are on medication.</p>
-            ) : (
-              <ul className="mt-3 divide-y divide-slate-100">
-                {medicatedPatients.map((patient) => (
-                  <li key={patient.patientId} className="py-3">
+        <section
+          aria-labelledby="treatment-title"
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <h2 id="treatment-title" className="text-lg font-bold text-slate-900">
+            Patients under treatment
+          </h2>
+          {inTreatment.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-500">No treatments in progress.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-slate-100">
+              {inTreatment.map((entry) => (
+                <li key={entry.key} className="py-3">
+                  <div className="flex items-baseline justify-between gap-2">
                     <Link
-                      to={`/app/patients/${patient.patientId}`}
+                      to={`/app/patients/${entry.patientId}`}
                       className="font-semibold text-teal-700 hover:underline"
                     >
-                      {patient.patientName}
+                      {entry.patientName}
                     </Link>
-                    <ul className="mt-1 space-y-0.5 text-sm text-slate-600">
-                      {patient.items.map((medication) => (
-                        <li key={medication.id}>
-                          <span className="font-medium text-slate-800">{medication.name}</span>
-                          {describeMedication(medication)}
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section
-            aria-labelledby="coming-up-title"
-            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-          >
-            <h2 id="coming-up-title" className="text-lg font-bold text-slate-900">
-              Coming up
-            </h2>
-            {comingUp.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500">Nothing booked in the following week.</p>
-            ) : (
-              <ul className="mt-3 divide-y divide-slate-100">
-                {comingUp.map((appointment) => (
-                  <li key={appointment.id}>
+                    {entry.stepCount > 1 && (
+                      <span className="text-xs font-semibold text-slate-500">
+                        {entry.done} of {entry.stepCount} done
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-700">{entry.name}</p>
+                  {entry.stepCount > 1 && (
+                    <div
+                      className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100"
+                      role="progressbar"
+                      aria-label={`${entry.patientName}: ${entry.name}`}
+                      aria-valuemin={0}
+                      aria-valuemax={entry.stepCount}
+                      aria-valuenow={entry.done}
+                    >
+                      <div
+                        className="h-full rounded-full bg-rose-400"
+                        style={{ width: `${(entry.done / entry.stepCount) * 100}%` }}
+                      />
+                    </div>
+                  )}
+                  {entry.next && (
                     <button
                       type="button"
-                      onClick={() => setSelectedId(appointment.id)}
-                      className="w-full py-2 text-left hover:bg-slate-50"
+                      onClick={() => setSelectedId(entry.next!.id)}
+                      className="mt-1.5 text-xs font-semibold text-slate-500 hover:text-teal-700 hover:underline"
                     >
-                      <span className="block text-xs font-semibold text-slate-500">
-                        {formatShortDay(appointment.startsAt)} · {formatTime(appointment.startsAt)}
-                      </span>
-                      <span className="block text-sm text-slate-800">
-                        <span className="font-semibold">{appointment.patientName}</span> ·{' '}
-                        {appointment.title}
-                      </span>
+                      Next: {formatShortDay(entry.next.startsAt)} ·{' '}
+                      {formatTime(entry.next.startsAt)}
+                      {entry.next.treatment && ` · ${stepName(entry.next)}`}
                     </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        <section
+          aria-labelledby="upcoming-title"
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <h2 id="upcoming-title" className="text-lg font-bold text-slate-900">
+            Upcoming tasks
+          </h2>
+          <p className="text-sm text-slate-500">The next {LOOK_AHEAD_DAYS} days.</p>
+          <div className="mt-4">
+            <CalendarEventList
+              events={upcoming.map(appointmentToCalendarEvent)}
+              emptyMessage={`Nothing booked in the next ${LOOK_AHEAD_DAYS} days.`}
+              onEventSelect={selectEvent}
+            />
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="attention-title"
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+        >
+          <h2 id="attention-title" className="text-lg font-bold text-slate-900">
+            Needs attention
+          </h2>
+          <p className="text-sm text-slate-500">
+            Past appointments not marked as done. Open one to mark it done or cancel it.
+          </p>
+          <div className="mt-4">
+            <CalendarEventList
+              events={needsAttention.map(appointmentToCalendarEvent)}
+              emptyMessage="All caught up."
+              onEventSelect={selectEvent}
+            />
+          </div>
+        </section>
       </div>
 
       {selectedAppointment && (
@@ -369,19 +406,15 @@ export default function DashboardPage({ clinicName }: { clinicName: string }) {
           appointment={selectedAppointment}
           onClose={() => setSelectedId(null)}
           onDeleted={(deletedIds) => {
-            setAppointments((current) =>
-              current.filter((appointment) => !deletedIds.includes(appointment.id)),
-            )
+            setAppointmentsById((current) => {
+              const next = new Map(current)
+              for (const id of deletedIds) next.delete(id)
+              return next
+            })
             setSelectedId(null)
           }}
-          onBooked={(booked) => setAppointments((current) => [...current, ...booked])}
-          onUpdated={(updated) => {
-            setAppointments((current) =>
-              current.map((appointment) => (appointment.id === updated.id ? updated : appointment)),
-            )
-            // Medications may have been started at the visit.
-            if (updated.status === 'COMPLETED') refreshMedications()
-          }}
+          onBooked={merge}
+          onUpdated={(updated) => merge([updated])}
         />
       )}
     </div>
@@ -462,4 +495,82 @@ function formatTime(iso: string) {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(iso))
+}
+
+interface TreatmentEntry {
+  key: string
+  patientId: string
+  patientName: string
+  /** The course or appointment name. */
+  name: string
+  stepCount: number
+  done: number
+  next: Appointment | null
+}
+
+/**
+ * Patients with a treatment in progress: treatment courses with appointments
+ * still to come, and single treatment appointments in the next two weeks.
+ */
+function patientsInTreatment(appointments: Appointment[], now: number, lookAheadEnd: string) {
+  const isUpcoming = (appointment: Appointment) =>
+    appointment.status === 'SCHEDULED' &&
+    new Date(appointment.startsAt).getTime() + appointment.durationMinutes * 60_000 >= now
+  const entries: TreatmentEntry[] = []
+
+  const courses = new Map<string, Appointment[]>()
+  for (const appointment of appointments) {
+    if (!appointment.treatment) continue
+    const list = courses.get(appointment.treatment.seriesId) ?? []
+    list.push(appointment)
+    courses.set(appointment.treatment.seriesId, list)
+  }
+  for (const [seriesId, list] of courses) {
+    const remaining = list.filter(isUpcoming).sort((a, b) => a.startsAt.localeCompare(b.startsAt))
+    const next = remaining[0]
+    if (!next) continue
+    const course = next.treatment!
+    entries.push({
+      key: seriesId,
+      patientId: next.patientId,
+      patientName: next.patientName,
+      name: course.name,
+      stepCount: course.stepCount,
+      // Earlier steps may be outside the loaded range, so count from the next one.
+      done: Math.max(
+        course.stepNumber - 1,
+        list.filter((appointment) => appointment.status === 'COMPLETED').length,
+      ),
+      next,
+    })
+  }
+
+  for (const appointment of appointments) {
+    if (appointment.treatment || appointment.category !== 'TREATMENT') continue
+    if (!isUpcoming(appointment) || toDateKey(new Date(appointment.startsAt)) > lookAheadEnd)
+      continue
+    entries.push({
+      key: appointment.id,
+      patientId: appointment.patientId,
+      patientName: appointment.patientName,
+      name: appointment.title,
+      stepCount: 1,
+      done: 0,
+      next: appointment,
+    })
+  }
+
+  return entries.sort(
+    (a, b) =>
+      a.patientName.localeCompare(b.patientName) ||
+      (a.next?.startsAt ?? '').localeCompare(b.next?.startsAt ?? ''),
+  )
+}
+
+/** e.g. "Injection 2" from "Joint therapy: Injection 2" */
+function stepName(appointment: Appointment) {
+  const prefix = `${appointment.treatment!.name}: `
+  return appointment.title.startsWith(prefix)
+    ? appointment.title.slice(prefix.length)
+    : appointment.title
 }
