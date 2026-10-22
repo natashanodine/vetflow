@@ -1,10 +1,13 @@
 import { jsonRequest, request } from './http'
 import type {
+  ActiveMedication,
   Attachment,
   CreateOwnerInput,
   CreatePatientInput,
   MedicalRecord,
   MedicalRecordInput,
+  Medication,
+  MedicationInput,
   Owner,
   Patient,
   UpdateOwnerInput,
@@ -141,3 +144,27 @@ export function deleteMedicalRecord(recordId: string): Promise<void> {
   return deleteRequest(`/records/${recordId}`)
 }
 
+
+export function getMedications(patientId: string): Promise<Medication[]> {
+  return apiRequest<Medication[]>(`/patients/${patientId}/medications`)
+}
+
+/** Every patient's current medications. */
+export function getActiveMedications(): Promise<ActiveMedication[]> {
+  return apiRequest<ActiveMedication[]>('/medications/active')
+}
+
+export function createMedication(
+  patientId: string,
+  input: MedicationInput & { name: string; startDate: string },
+): Promise<Medication> {
+  return apiRequest<Medication>(`/patients/${patientId}/medications`, jsonRequest('POST', input))
+}
+
+export function updateMedication(medicationId: string, input: MedicationInput): Promise<Medication> {
+  return apiRequest<Medication>(`/medications/${medicationId}`, jsonRequest('PATCH', input))
+}
+
+export function deleteMedication(medicationId: string): Promise<void> {
+  return deleteRequest(`/medications/${medicationId}`)
+}

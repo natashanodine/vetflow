@@ -6,6 +6,7 @@ import { getAppointments } from '../../api/schedule'
 import AppointmentDetailsModal from '../../components/AppointmentDetailsModal'
 import AttachmentsPanel from '../../components/AttachmentsPanel'
 import MedicalHistoryPanel from '../../components/MedicalHistoryPanel'
+import MedicationsPanel from '../../components/MedicationsPanel'
 import { useCan } from '../../components/ViewerProvider'
 import { appointmentToCalendarEvent } from '../../data/calendarEvents'
 import type { CalendarEvent } from '../../data/calendarEvents'
@@ -23,6 +24,9 @@ export default function PatientDetailsPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null)
   const [now] = useState(() => Date.now())
+  const [activeMedicationCount, setActiveMedicationCount] = useState(0)
+  /** Bumped after a visit is completed here, to reload what it may have changed. */
+  const [visitVersion, setVisitVersion] = useState(0)
   const canEditRecords = useCan('editRecords')
 
   useEffect(() => {
@@ -113,6 +117,14 @@ export default function PatientDetailsPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              {activeMedicationCount > 0 && (
+                <a
+                  href="#medications-title"
+                  className="rounded-full bg-rose-50 px-3 py-1 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                >
+                  On medication
+                </a>
+              )}
               <span className="rounded-full bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-700">
                 {formatLabel(patient.sex)}
               </span>
@@ -202,7 +214,14 @@ export default function PatientDetailsPage() {
         </div>
       </section>
 
+      <MedicationsPanel
+        key={`medications-${visitVersion}`}
+        patientId={patient.id}
+        onActiveCountChange={setActiveMedicationCount}
+      />
+
       <MedicalHistoryPanel
+        key={`history-${visitVersion}`}
         patientId={patient.id}
         appointments={appointmentsNewestFirst}
       />
@@ -224,7 +243,22 @@ export default function PatientDetailsPage() {
             )
             setSelectedEvent(null)
           }}
+          onBooked={(booked) =>
+            setAppointments((current) =>
+              [...current, ...booked].filter((appointment) => appointment.patientId === patient.id),
+            )
+          }
           onUpdated={(updatedAppointment) => {
+            if (
+              updatedAppointment.status === 'COMPLETED' &&
+              selectedAppointment.status !== 'COMPLETED'
+            ) {
+              // The visit may have recorded a weight, history and medications.
+              setVisitVersion((version) => version + 1)
+              getPatientById(patient.id)
+                .then(setPatient)
+                .catch(() => undefined)
+            }
             setAppointments((current) =>
               current
                 .map((appointment) =>

@@ -3,6 +3,7 @@ import { toUpdate, withoutEmpty } from '../lib/db.js'
 import { patientExists } from '../lib/patients.js'
 import {
   MedicalRecord,
+  Patient,
   recordTypes,
   type MedicalRecordDoc,
   type RecordType,
@@ -66,6 +67,23 @@ function isFutureDate(value: string) {
 async function appointmentMatches(appointmentId: string, patientId: string) {
   const appointment = await getAppointment(appointmentId)
   return appointment?.patientId === patientId
+}
+
+/**
+ * Keeps the patient's current weight in step with the newest weighed entry,
+ * so recording a weight at a visit updates the patient.
+ */
+async function syncPatientWeight(record: MedicalRecordDoc) {
+  if (record.weightKg == null) return
+  const newest = await MedicalRecord.findOne({
+    patientId: record.patientId,
+    weightKg: { $exists: true },
+  })
+    .sort({ recordedAt: -1, createdAt: -1 })
+    .lean()
+  if (newest?._id === record._id) {
+    await Patient.updateOne({ _id: record.patientId }, { $set: { weightKg: record.weightKg } })
+  }
 }
 
 export const recordRoutes: FastifyPluginAsync = async (app) => {
@@ -135,6 +153,7 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
           authorName: requester.name || null,
         }),
       )
+      await syncPatientWeight(record.toObject())
       return reply.status(201).send(serialize(record.toObject()))
     },
   )
@@ -192,6 +211,7 @@ export const recordRoutes: FastifyPluginAsync = async (app) => {
         { new: true, runValidators: true },
       ).lean()
       if (!record) return reply.status(404).send({ message: 'Record not found' })
+      await syncPatientWeight(record)
       return serialize(record)
     },
   )

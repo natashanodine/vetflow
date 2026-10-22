@@ -157,3 +157,40 @@ export interface TeamMemberInput {
   isActive?: boolean
   isVeterinarian?: boolean
 }
+
+export interface Medication {
+  id: string
+  patientId: string
+  /** The visit it was started at, if any. */
+  appointmentId: string | null
+  name: string
+  dose: string | null
+  frequency: string | null
+  instructions: string | null
+  /** "YYYY-MM-DD" */
+  startDate: string
+  endDate: string | null
+  /** Set when it was stopped early. */
+  stoppedOn: string | null
+  /** Not stopped and the end date (if any) hasn't passed. */
+  isActive: boolean
+  prescribedByName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** A current medication with the patient's name (clinic-wide list). */
+export interface ActiveMedication extends Medication {
+  patientName: string
+}
+
+export interface MedicationInput {
+  name?: string
+  dose?: string | null
+  frequency?: string | null
+  instructions?: string | null
+  startDate?: string
+  endDate?: string | null
+  stoppedOn?: string | null
+  appointmentId?: string | null
+}

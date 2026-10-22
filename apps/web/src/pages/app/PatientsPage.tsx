@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { getPatients } from '../../api/clinic'
+import { getActiveMedications, getPatients } from '../../api/clinic'
 import type { Patient } from '../../types/clinic'
 
 export default function PatientsPage() {
@@ -9,9 +9,17 @@ export default function PatientsPage() {
   const [vetFilter, setVetFilter] = useState('ALL')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  /** Patients with a current medication. */
+  const [medicated, setMedicated] = useState<ReadonlySet<string>>(new Set())
 
   useEffect(() => {
     let isActive = true
+
+    getActiveMedications()
+      .then((medications) => {
+        if (isActive) setMedicated(new Set(medications.map((medication) => medication.patientId)))
+      })
+      .catch(() => undefined)
 
     getPatients()
       .then((patientData) => {
@@ -143,9 +151,16 @@ export default function PatientsPage() {
                   </p>
                 </div>
 
-                <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
-                  {formatLabel(patient.sex)}
-                </span>
+                <div className="flex flex-col items-end gap-1.5">
+                  <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
+                    {formatLabel(patient.sex)}
+                  </span>
+                  {medicated.has(patient.id) && (
+                    <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">
+                      On medication
+                    </span>
+                  )}
+                </div>
               </div>
 
               <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">

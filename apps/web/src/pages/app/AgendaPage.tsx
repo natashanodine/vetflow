@@ -210,6 +210,7 @@ export default function AgendaPage() {
             )
             setSelectedEvent(null)
           }}
+          onBooked={(booked) => setAppointments((current) => [...current, ...booked])}
           onUpdated={(updatedAppointment) => {
             setAppointments((current) =>
               current.map((appointment) =>

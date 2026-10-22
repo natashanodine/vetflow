@@ -5,6 +5,8 @@ import { ApiError } from '../api/http'
 import { deleteAppointment, updateAppointment } from '../api/schedule'
 import { useCan } from '../auth/hooks'
 import AttachmentsPanel from './AttachmentsPanel'
+import VisitCompletionForm from './VisitCompletionForm'
+import VisitSummary from './VisitSummary'
 import type { CalendarEvent } from '../data/calendarEvents'
 import type { Patient } from '../types/clinic'
 import type { Appointment, UpdateAppointmentInput } from '../types/schedule'
@@ -16,6 +18,8 @@ interface AppointmentDetailsModalProps {
   onUpdated: (appointment: Appointment) => void
   /** Called with the ids of every appointment deleted. */
   onDeleted: (appointmentIds: string[]) => void
+  /** Treatment-course appointments booked while completing the visit. */
+  onBooked?: (appointments: Appointment[]) => void
 }
 
 const categoryStyles = {
@@ -36,9 +40,14 @@ export default function AppointmentDetailsModal({
   onClose,
   onUpdated,
   onDeleted,
+  onBooked,
 }: AppointmentDetailsModalProps) {
   const canDelete = useCan('editRecords')
+  // Visit notes go into medical history, which only admins and vets can write.
+  const canWriteNotes = canDelete
   const [isEditing, setIsEditing] = useState(false)
+  const [isCompleting, setIsCompleting] = useState(false)
+  const [bookedCount, setBookedCount] = useState(0)
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   /** The server asked to confirm a past or closed date; holds the save to retry. */
@@ -71,6 +80,14 @@ export default function AppointmentDetailsModal({
       setIsSaving(false)
     }
   }
+  async function markDone() {
+    if (canWriteNotes) {
+      setIsCompleting(true)
+      return
+    }
+    await save({ status: 'COMPLETED' })
+  }
+
   const laterInCourse = appointment.treatment
     ? appointment.treatment.stepCount - appointment.treatment.stepNumber
     : 0
@@ -214,7 +231,18 @@ export default function AppointmentDetailsModal({
             </div>
           )}
 
-          {isEditing ? (
+          {isCompleting ? (
+            <VisitCompletionForm
+              appointment={appointment}
+              onCancel={() => setIsCompleting(false)}
+              onCompleted={(completed, booked) => {
+                setIsCompleting(false)
+                setBookedCount(booked.length)
+                if (booked.length > 0) onBooked?.(booked)
+                onUpdated(completed)
+              }}
+            />
+          ) : isEditing ? (
             <form onSubmit={(formEvent) => void handleUpdate(formEvent)}>
               <div className="grid gap-4 md:grid-cols-2">
                 <Field label="Patient">
@@ -443,6 +471,17 @@ export default function AppointmentDetailsModal({
                 </p>
               </div>
 
+              {bookedCount > 0 && (
+                <p role="status" className="mt-6 rounded-lg bg-teal-50 px-3 py-2 text-sm text-teal-900">
+                  Treatment course booked: {bookedCount}{' '}
+                  {bookedCount === 1 ? 'appointment' : 'appointments'} added to the agenda.
+                </p>
+              )}
+
+              {appointment.status === 'COMPLETED' && (
+                <VisitSummary patientId={appointment.patientId} appointmentId={appointment.id} />
+              )}
+
               <div className="mt-6">
                 <AttachmentsPanel
                   patientId={appointment.patientId}
@@ -521,10 +560,24 @@ export default function AppointmentDetailsModal({
                   <button
                     type="button"
                     onClick={() => void beginEditing()}
-                    className="rounded-lg bg-teal-600 px-4 py-2 font-semibold text-white hover:bg-teal-700"
+                    className={
+                      appointment.status === 'SCHEDULED'
+                        ? 'rounded-lg border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50'
+                        : 'rounded-lg bg-teal-600 px-4 py-2 font-semibold text-white hover:bg-teal-700'
+                    }
                   >
                     Edit appointment
                   </button>
+                  {appointment.status === 'SCHEDULED' && (
+                    <button
+                      type="button"
+                      onClick={() => void markDone()}
+                      disabled={isSaving}
+                      className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {isSaving ? 'Saving…' : 'Mark as done'}
+                    </button>
+                  )}
                 </div>
               )}
             </>

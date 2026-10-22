@@ -163,6 +163,48 @@ export const Attachment = model<AttachmentDoc>(
   'attachments',
 )
 
+export interface MedicationDoc {
+  _id: string
+  patientId: string
+  /** The visit (scheduling-service appointment) it was started at, if any. */
+  appointmentId?: string
+  name: string
+  /** e.g. "10 ml", "2 tablets" */
+  dose?: string
+  /** e.g. "Twice a day" */
+  frequency?: string
+  instructions?: string
+  /** Calendar dates, stored as UTC midnight. */
+  startDate: Date
+  endDate?: Date
+  /** Set when it was stopped early. */
+  stoppedOn?: Date
+  prescribedById?: string
+  prescribedByName?: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+const medicationSchema = new Schema<MedicationDoc>(
+  {
+    _id: uuidId,
+    patientId: { type: String, required: true, index: true },
+    appointmentId: { type: String, index: true },
+    name: { type: String, required: true, maxlength: 120 },
+    dose: { type: String, maxlength: 120 },
+    frequency: { type: String, maxlength: 120 },
+    instructions: { type: String, maxlength: 2000 },
+    startDate: { type: Date, required: true },
+    endDate: { type: Date },
+    stoppedOn: { type: Date },
+    prescribedById: { type: String },
+    prescribedByName: { type: String, maxlength: 160 },
+  },
+  { timestamps: true, versionKey: false },
+)
+
+export const Medication = model<MedicationDoc>('Medication', medicationSchema, 'medications')
+
 export function serializeOwner(owner: OwnerDoc) {
   return {
     id: owner._id,

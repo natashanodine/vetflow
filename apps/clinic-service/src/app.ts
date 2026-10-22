@@ -5,6 +5,7 @@ import { disconnectDatabase, isDuplicateKeyError } from './lib/db.js'
 import { hasValidInternalToken } from './lib/requester.js'
 import { attachmentRoutes, MAX_ATTACHMENT_BYTES } from './routes/attachments.js'
 import { healthRoutes } from './routes/health.js'
+import { medicationRoutes } from './routes/medications.js'
 import { ownerRoutes } from './routes/owners.js'
 import { patientRoutes } from './routes/patients.js'
 import { recordRoutes } from './routes/records.js'
@@ -30,6 +31,7 @@ export function buildApp() {
   app.register(ownerRoutes)
   app.register(patientRoutes)
   app.register(recordRoutes)
+  app.register(medicationRoutes)
   app.register(attachmentRoutes)
 
   app.setErrorHandler((error, request, reply) => {
