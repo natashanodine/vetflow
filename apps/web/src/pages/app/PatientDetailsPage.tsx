@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { getOwners, getPatientById, updatePatient } from '../../api/clinic'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { deletePatient, getOwners, getPatientById, updatePatient } from '../../api/clinic'
 import { getVets } from '../../api/identity'
 import { getAppointments } from '../../api/schedule'
 import AppointmentDetailsModal from '../../components/AppointmentDetailsModal'
@@ -12,6 +12,7 @@ import { appointmentToCalendarEvent } from '../../data/calendarEvents'
 import type { CalendarEvent } from '../../data/calendarEvents'
 import type { Owner, Patient, Vet } from '../../types/clinic'
 import type { Appointment } from '../../types/schedule'
+import { formatAge } from '../../lib/age'
 
 const speciesOptions = ['DOG', 'CAT', 'HORSE', 'BIRD', 'RABBIT', 'REPTILE', 'OTHER']
 
@@ -230,6 +231,10 @@ export default function PatientDetailsPage() {
         patientId={patient.id}
         appointments={appointmentsNewestFirst}
       />
+
+      {canEditRecords && (
+        <DeletePatientSection patient={patient} appointmentCount={appointments.length} />
+      )}
 
       {selectedEvent && selectedAppointment && (
         <AppointmentDetailsModal
@@ -608,18 +613,6 @@ function formatBirthDate(date: string | null) {
   return `${formatted} (${formatAge(date)})`
 }
 
-function formatAge(date: string) {
-  const birth = new Date(date)
-  const today = new Date()
-  let months =
-    (today.getFullYear() - birth.getUTCFullYear()) * 12 +
-    (today.getMonth() - birth.getUTCMonth())
-  if (today.getDate() < birth.getUTCDate()) months -= 1
-  if (months < 1) return 'under 1 month'
-  if (months < 24) return `${months} ${months === 1 ? 'month' : 'months'}`
-  return `${Math.floor(months / 12)} years`
-}
-
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
     month: 'short',
@@ -646,6 +639,97 @@ function PageMessage({
     >
       {message}
     </div>
+  )
+}
+
+function DeletePatientSection({
+  patient,
+  appointmentCount,
+}: {
+  patient: Patient
+  appointmentCount: number
+}) {
+  const navigate = useNavigate()
+  const [step, setStep] = useState<'idle' | 'confirm' | 'final'>('idle')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleDelete() {
+    setIsDeleting(true)
+    setError(null)
+    try {
+      await deletePatient(patient.id)
+      navigate('/app/patients', { replace: true })
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete the patient')
+      setIsDeleting(false)
+    }
+  }
+
+  function cancel() {
+    setStep('idle')
+    setError(null)
+  }
+
+  return (
+    <section className="rounded-2xl border border-red-100 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-bold text-slate-900">Delete patient</h2>
+
+      {step === 'idle' && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-500">
+            Removes {patient.name} and everything recorded about them.
+          </p>
+          <button
+            type="button"
+            onClick={() => setStep('confirm')}
+            className="rounded-lg border border-red-200 px-4 py-2 font-semibold text-red-700 hover:bg-red-50"
+          >
+            Delete patient
+          </button>
+        </div>
+      )}
+
+      {step === 'confirm' && (
+        <div role="alertdialog" aria-labelledby="delete-patient-1" className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p id="delete-patient-1" className="font-bold text-amber-900">
+            Do you want to delete {patient.name}?
+          </p>
+          <p className="mt-1 text-sm text-amber-900">
+            This also deletes {appointmentCount} {appointmentCount === 1 ? 'appointment' : 'appointments'},
+            all medical history, medications, and uploaded files and images.
+          </p>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={cancel} className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50">
+              No, keep it
+            </button>
+            <button type="button" onClick={() => setStep('final')} className="rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-700">
+              Yes, delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'final' && (
+        <div role="alertdialog" aria-labelledby="delete-patient-2" className="mt-3 rounded-xl border border-red-300 bg-red-50 p-4">
+          <p id="delete-patient-2" className="font-bold text-red-900">
+            Are you sure? This can&apos;t be undone.
+          </p>
+          <p className="mt-1 text-sm text-red-800">
+            {patient.name} and all their records will be permanently deleted.
+          </p>
+          {error && <p role="alert" className="mt-2 text-sm font-semibold text-red-800">{error}</p>}
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={cancel} disabled={isDeleting} className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50">
+              Cancel
+            </button>
+            <button type="button" onClick={() => void handleDelete()} disabled={isDeleting} className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-60">
+              {isDeleting ? 'Deleting…' : 'Delete permanently'}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 

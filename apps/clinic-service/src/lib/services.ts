@@ -67,3 +67,12 @@ export async function syncPatientToScheduling(
     },
   )
 }
+
+/** Deletes all of a patient's appointments. Throws if scheduling-service fails. */
+export async function deletePatientAppointments(patientId: string) {
+  const response = await fetch(
+    `${schedulingUrl()}/internal/patients/${encodeURIComponent(patientId)}`,
+    { method: 'DELETE', headers: internalHeaders() },
+  )
+  if (!response.ok) throw new Error(`Scheduling service answered ${response.status}`)
+}

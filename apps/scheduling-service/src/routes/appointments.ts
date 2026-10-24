@@ -16,11 +16,7 @@ const confirmationProperties = {
   allowPast: { type: 'boolean' },
 }
 
-/**
- * Past times and days the clinic is closed need an explicit confirmation.
- * Replies 400 (with a `code` the web app can react to) and returns false if
- * one is missing.
- */
+
 async function checkBookingDate(
   startsAt: Date,
   confirmations: BookingConfirmations,
@@ -400,6 +396,14 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
         },
       )
       return { updated: result.modifiedCount }
+    },
+  )
+
+   app.delete<{ Params: { patientId: string } }>(
+    '/internal/patients/:patientId',
+    async (request) => {
+      const result = await Appointment.deleteMany({ patientId: request.params.patientId })
+      return { deleted: result.deletedCount }
     },
   )
 }

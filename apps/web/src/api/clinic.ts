@@ -116,6 +116,10 @@ export function updatePatient(
   )
 }
 
+export function deletePatient(patientId: string): Promise<void> {
+  return deleteRequest(`/patients/${patientId}`)
+}
+
 export function getMedicalRecords(patientId: string): Promise<MedicalRecord[]> {
   return apiRequest<MedicalRecord[]>(`/patients/${patientId}/records`)
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getActiveMedications, getPatients } from '../../api/clinic'
 import type { Patient } from '../../types/clinic'
+import { formatAge } from '../../lib/age'
 
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([])
@@ -222,21 +223,6 @@ function PatientFact({ label, value }: { label: string; value: string }) {
       <dd className="font-medium text-slate-700">{value}</dd>
     </div>
   )
-}
-
-function formatAge(dateOfBirth: string | null) {
-  if (!dateOfBirth) return 'Unknown'
-
-  const birthDate = new Date(dateOfBirth)
-  const today = new Date()
-  let years = today.getFullYear() - birthDate.getUTCFullYear()
-  const birthdayHasPassed =
-    today.getMonth() > birthDate.getUTCMonth() ||
-    (today.getMonth() === birthDate.getUTCMonth() &&
-      today.getDate() >= birthDate.getUTCDate())
-
-  if (!birthdayHasPassed) years -= 1
-  return `${years} ${years === 1 ? 'year' : 'years'}`
 }
 
 function formatLabel(value: string) {

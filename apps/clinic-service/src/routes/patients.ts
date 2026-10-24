@@ -1,9 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify'
 import { isDuplicateKeyError, toUpdate, withoutEmpty } from '../lib/db.js'
 import { presentPatient, presentPatients } from '../lib/patients.js'
-import { Owner, Patient } from '../models/index.js'
+import { Owner, Patient, Attachment, MedicalRecord, Medication } from '../models/index.js'
 import { requireRequester } from '../lib/requester.js'
-import { isAssignableVet, syncPatientToScheduling } from '../lib/services.js'
+import { isAssignableVet, syncPatientToScheduling, deletePatientAppointments } from '../lib/services.js'
+import { deleteFile } from '../lib/storage.js'
 
 type Species =
   | 'DOG'
@@ -429,6 +430,38 @@ export const patientRoutes: FastifyPluginAsync = async (app) => {
         }
         throw error
       }
+    },
+  )
+  app.delete<{ Params: PatientParams }>(
+    '/patients/:patientId',
+    async (request, reply) => {
+      if (!requireRequester(request, reply, 'editRecords')) return
+
+      const { patientId } = request.params
+      const patient = await Patient.findById(patientId).lean()
+      if (!patient) return reply.status(404).send({ message: 'Patient not found' })
+
+      // Appointments first: if that fails, nothing has been deleted yet.
+      try {
+        await deletePatientAppointments(patientId)
+      } catch (error) {
+        request.log.error(error)
+        return reply
+          .status(502)
+          .send({ message: 'Could not delete the appointments, so nothing was deleted. Try again.' })
+      }
+
+      // Stored files (R2 or disk), then their records, so the space is freed.
+      const attachments = await Attachment.find({ patientId }).lean()
+      for (const attachment of attachments) {
+        await deleteFile(attachment.storageKey)
+      }
+      await Attachment.deleteMany({ patientId })
+      await MedicalRecord.deleteMany({ patientId })
+      await Medication.deleteMany({ patientId })
+      await Patient.deleteOne({ _id: patientId })
+
+      return reply.status(204).send()
     },
   )
 }
