@@ -329,11 +329,6 @@ export const appointmentRoutes: FastifyPluginAsync = async (app) => {
     },
   )
 
-  /**
-   * Deletes an appointment. With ?scope=following on a treatment appointment,
-   * also deletes the later appointments of the same treatment course.
-   * Files and medical history linked to it stay on the patient's record.
-   */
   app.delete<{ Params: AppointmentParams; Querystring: { scope?: 'this' | 'following' } }>(
     '/appointments/:appointmentId',
     {

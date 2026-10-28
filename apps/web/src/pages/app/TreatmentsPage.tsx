@@ -119,8 +119,8 @@ export default function TreatmentsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="font-semibold text-teal-600">Treatment plans</p>
-          <h1 className="mt-1 text-3xl font-bold text-slate-900">Treatments</h1>
+          <p className="font-semibold text-teal-600">Clinic setup</p>
+          <h1 className="mt-1 text-3xl font-bold text-slate-900">Treatment plans</h1>
           <p className="mt-2 max-w-2xl text-slate-600">
             Set up a course of appointments once, then book all of it from the{' '}
             <Link to="/app/agenda" className="font-semibold text-teal-700 hover:underline">

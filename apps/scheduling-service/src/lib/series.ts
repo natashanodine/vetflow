@@ -44,15 +44,6 @@ async function busyPeriods(from: Date, to: Date): Promise<BusyPeriod[]> {
   })
 }
 
-/**
- * Works out the date and time of every appointment in a treatment course.
- * The first is at `firstStart`; each later one is its step's gap (days or
- * weeks) after the date the previous appointment actually landed on:
- * - a date on a Saturday or Sunday moves to the nearest weekday;
- * - every appointment keeps the first one's time of day;
- * - if that time clashes with a booked appointment (or doesn't fit before
- *   closing), it moves to the next free slot that day, or the next working day.
- */
 export async function planSeries(
   treatment: TreatmentDoc,
   firstStart: Date,
