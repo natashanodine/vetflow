@@ -76,6 +76,17 @@ export default {
       return wakeAll(env.WAKE_URLS)
     }
 
+    // The services' health pages, so the browser can wake them itself:
+    // Render now only starts a sleeping service for requests from a browser.
+    if (url.pathname === '/api/wake/targets') {
+      const urls = (env.WAKE_URLS ?? '')
+        .split(',')
+        .map((value) => value.trim().replace(/\/$/, ''))
+        .filter(Boolean)
+        .map((baseUrl) => `${baseUrl}/health`)
+      return Response.json({ urls })
+    }
+
     if (!env.API_ORIGIN) {
       return Response.json(
         { message: 'API_ORIGIN is not configured for this site.' },

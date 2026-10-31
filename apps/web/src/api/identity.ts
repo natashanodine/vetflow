@@ -30,24 +30,77 @@ export async function wakeServices() {
   // cold. Never block the login page for longer than this; sign-in itself
   // also retries, so it's safe to let the person try afterwards.
   const deadline = Date.now() + 180_000
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch('/api/wake', {
-        signal: AbortSignal.timeout(Math.max(1_000, Math.min(75_000, deadline - Date.now()))),
-      })
-      const body = (await response.json().catch(() => null)) as {
-        ready?: boolean
-        asleep?: string[]
-      } | null
-      if (response.ok && body?.ready) return true
-      if (body?.asleep) console.warn('Services still starting:', body.asleep.join(', '))
-    } catch {
-      // The gateway itself may still be starting; try again shortly.
+  // Have this browser visit each service too, like opening it in a tab, while
+  // the site checks whether they're up (it stops as soon as they are).
+  const stopNudging = await startNudging()
+  try {
+    while (Date.now() < deadline) {
+      if (await checkWake(deadline)) return true
+      if (Date.now() + 3_000 >= deadline) break
+      await new Promise((resolve) => setTimeout(resolve, 3_000))
     }
-    if (Date.now() + 3_000 >= deadline) break
-    await new Promise((resolve) => setTimeout(resolve, 3_000))
+    return false
+  } finally {
+    stopNudging()
+  }
+}
+
+/** Asks the site whether every service is up (it polls them for up to ~55 s). */
+async function checkWake(deadline: number) {
+  try {
+    const response = await fetch('/api/wake', {
+      signal: AbortSignal.timeout(Math.max(1_000, Math.min(75_000, deadline - Date.now()))),
+    })
+    const body = (await response.json().catch(() => null)) as {
+      ready?: boolean
+      asleep?: string[]
+    } | null
+    if (response.ok && body?.ready) return true
+    if (body?.asleep) console.warn('Services still starting:', body.asleep.join(', '))
+  } catch {
+    // The gateway itself may still be starting; try again shortly.
   }
   return false
+}
+
+/**
+ * Sleeping services on Render's free plan start when a browser visits them
+ * (requests from servers, like this site's own, aren't enough). Loads each
+ * service's health page in a hidden frame, and requests it again every
+ * 15 seconds, until stopped.
+ */
+async function startNudging() {
+  let urls: string[] = []
+  try {
+    const response = await fetch('/api/wake/targets')
+    if (response.ok) urls = ((await response.json()) as { urls?: string[] }).urls ?? []
+  } catch {
+    // Without the list there's nothing to visit; the normal wake still runs.
+  }
+  if (urls.length === 0) return () => undefined
+
+  const frames = urls.map((url) => {
+    const frame = document.createElement('iframe')
+    frame.src = url
+    frame.title = 'Starting the clinic system'
+    frame.setAttribute('aria-hidden', 'true')
+    frame.tabIndex = -1
+    frame.style.cssText =
+      'position:absolute;width:1px;height:1px;border:0;opacity:0;pointer-events:none'
+    document.body.appendChild(frame)
+    return frame
+  })
+  const visitAll = () => {
+    for (const url of urls) {
+      fetch(url, { mode: 'no-cors', cache: 'no-store' }).catch(() => undefined)
+    }
+  }
+  visitAll()
+  const timer = setInterval(visitAll, 15_000)
+  return () => {
+    clearInterval(timer)
+    for (const frame of frames) frame.remove()
+  }
 }
 
 export async function getSession(): Promise<Session | null> {
@@ -108,10 +161,7 @@ export function createTeamMember(
   return apiRequest<TeamMember>('/team', jsonRequest('POST', input))
 }
 
-export function updateTeamMember(
-  userId: string,
-  input: TeamMemberInput,
-): Promise<TeamMember> {
+export function updateTeamMember(userId: string, input: TeamMemberInput): Promise<TeamMember> {
   return apiRequest<TeamMember>(`/team/${userId}`, jsonRequest('PATCH', input))
 }
 
