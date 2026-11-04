@@ -20,5 +20,7 @@ FROM nginx:stable-alpine AS production
 
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
+# nginx runs as an unprivileged user: make every file readable, however it was saved.
+RUN chmod -R a+rX /usr/share/nginx/html
 
 EXPOSE 80

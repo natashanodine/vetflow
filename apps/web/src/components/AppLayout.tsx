@@ -1,6 +1,7 @@
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/hooks'
 import { can, roleLabels } from '../lib/permissions'
+import { EquoraMark } from './EquoraMark'
 
 const navigation = [
   { label: 'Dashboard', path: '/app/dashboard' },
@@ -45,10 +46,13 @@ export default function AppLayout() {
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-          <div>
-            <p className="text-xl font-bold text-teal-600">Equora</p>
-            <p className="text-sm text-slate-500">{clinic.name}</p>
-          </div>
+          <Link to="/app/dashboard" className="flex items-center gap-3">
+            <EquoraMark className="h-11 w-11" />
+            <span>
+              <span className="block text-xl font-bold text-teal-600">Equora</span>
+              <span className="block text-sm text-slate-500">{clinic.name}</span>
+            </span>
+          </Link>
 
           <nav className="flex flex-wrap gap-2">
             {items.map((item) => (
