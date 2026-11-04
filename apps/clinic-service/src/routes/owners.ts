@@ -8,6 +8,7 @@ import {
   type OwnerDoc,
 } from '../models/index.js'
 import { requireRequester } from '../lib/requester.js'
+import { deletePatientCompletely } from '../lib/deletePatient.js'
 
 interface CreateOwnerBody {
   firstName: string
@@ -156,4 +157,30 @@ export const ownerRoutes: FastifyPluginAsync = async (app) => {
       }
     },
   )
+
+  /** Deletes an owner together with all of their patients and their records. */
+  app.delete<{ Params: OwnerParams }>('/owners/:ownerId', async (request, reply) => {
+    if (!requireRequester(request, reply, 'editRecords')) return
+
+    const owner = await Owner.findById(request.params.ownerId).lean()
+    if (!owner) return reply.status(404).send({ message: 'Owner not found' })
+
+    const patients = await Patient.find({ ownerId: owner._id }, { _id: 1 }).lean()
+    for (const patient of patients) {
+      try {
+        await deletePatientCompletely(patient._id)
+      } catch (error) {
+        request.log.error(error)
+        const remaining = await Patient.countDocuments({ ownerId: owner._id })
+        return reply.status(502).send({
+          message:
+            remaining === patients.length
+              ? 'Could not delete the appointments, so nothing was deleted. Try again.'
+              : `Some patients were deleted but ${remaining} could not be. Try again to finish.`,
+        })
+      }
+    }
+    await Owner.deleteOne({ _id: owner._id })
+    return reply.status(204).send()
+  })
 }

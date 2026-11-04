@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { getOwnerById, updateOwner } from '../../api/clinic'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { deleteOwner, getOwnerById, updateOwner } from '../../api/clinic'
 import { useCan } from '../../components/ViewerProvider'
 import type { Owner } from '../../types/clinic'
 
@@ -121,7 +121,138 @@ export default function OwnerDetailsPage() {
           </div>
         )}
       </section>
+
+      {canEditRecords && <DeleteOwnerSection owner={owner} />}
     </div>
+  )
+}
+
+/** At the bottom of the page: asks twice before deleting the owner and their horses. */
+function DeleteOwnerSection({ owner }: { owner: Owner }) {
+  const navigate = useNavigate()
+  const [step, setStep] = useState<'idle' | 'confirm' | 'final'>('idle')
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const name = `${owner.firstName} ${owner.lastName}`
+  const patientNames = owner.patients.map((patient) => patient.name)
+  const patientCount = patientNames.length
+
+  async function handleDelete() {
+    setIsDeleting(true)
+    setError(null)
+    try {
+      await deleteOwner(owner.id)
+      navigate('/app/owners', { replace: true })
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete the owner')
+      setIsDeleting(false)
+    }
+  }
+
+  function cancel() {
+    setStep('idle')
+    setError(null)
+  }
+
+  return (
+    <section className="rounded-2xl border border-red-100 bg-white p-6 shadow-sm">
+      <h2 className="text-lg font-bold text-slate-900">Delete owner</h2>
+
+      {step === 'idle' && (
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-500">
+            Removes {name}
+            {patientCount > 0 &&
+              ` and their ${patientCount} ${patientCount === 1 ? 'patient' : 'patients'}`}
+            , with everything recorded about them.
+          </p>
+          <button
+            type="button"
+            onClick={() => setStep('confirm')}
+            className="rounded-lg border border-red-200 px-4 py-2 font-semibold text-red-700 hover:bg-red-50"
+          >
+            Delete owner
+          </button>
+        </div>
+      )}
+
+      {step === 'confirm' && (
+        <div
+          role="alertdialog"
+          aria-labelledby="delete-owner-1"
+          className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-4"
+        >
+          <p id="delete-owner-1" className="font-bold text-amber-900">
+            Do you want to delete {name}?
+          </p>
+          <p className="mt-1 text-sm text-amber-900">
+            {patientCount === 0
+              ? 'This owner has no patients.'
+              : `This also deletes ${patientCount === 1 ? 'their patient' : `all ${patientCount} of their patients`} (${patientNames.join(', ')}), with all their appointments, medical history, medications, and uploaded files and images.`}
+          </p>
+          {patientCount > 0 && (
+            <p className="mt-2 text-sm text-amber-900">
+              To keep a horse, open it and change its owner first.
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={cancel}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              No, keep it
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep('final')}
+              className="rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white hover:bg-amber-700"
+            >
+              Yes, delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 'final' && (
+        <div
+          role="alertdialog"
+          aria-labelledby="delete-owner-2"
+          className="mt-3 rounded-xl border border-red-300 bg-red-50 p-4"
+        >
+          <p id="delete-owner-2" className="font-bold text-red-900">
+            Are you sure? This can&apos;t be undone.
+          </p>
+          <p className="mt-1 text-sm text-red-800">
+            {name}
+            {patientCount > 0 && ` and ${patientNames.join(', ')}`} will be permanently deleted.
+          </p>
+          {error && (
+            <p role="alert" className="mt-2 text-sm font-semibold text-red-800">
+              {error}
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            <button
+              type="button"
+              onClick={cancel}
+              disabled={isDeleting}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDelete()}
+              disabled={isDeleting}
+              className="rounded-lg bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+            >
+              {isDeleting ? 'Deleting…' : 'Delete permanently'}
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
 

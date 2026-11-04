@@ -116,6 +116,11 @@ export function updatePatient(
   )
 }
 
+/** Deletes an owner and all of their patients, with every record and file. */
+export function deleteOwner(ownerId: string): Promise<void> {
+  return deleteRequest(`/owners/${ownerId}`)
+}
+
 export function deletePatient(patientId: string): Promise<void> {
   return deleteRequest(`/patients/${patientId}`)
 }
