@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import { clinicContact } from '../../components/clinicContact'
-import { EquoraMark } from '../../components/EquoraMark'
 import { useContent } from '../../i18n/language'
 import { mareEvaluation, services } from './servicesContent'
 
@@ -12,11 +11,8 @@ const content = {
       'Bienvenidos a EQUORA. Un nuevo concepto de medicina equina, construido alrededor de lo que más importa: el caballo.',
     book: 'Agenda tu cita',
     explore: 'Ver servicios',
-    cardEyebrow: 'Nuestra filosofía',
-    cardTitle: 'El caballo, siempre en el centro.',
     belief:
       'Creemos en una medicina que combina ciencia, experiencia y cuidado, siempre poniendo al caballo en el centro.',
-    pillars: ['Ciencia', 'Experiencia', 'Cuidado'],
     servicesEyebrow: 'Nuestros servicios',
     servicesTitle: 'Medicina equina integral.',
     servicesIntro:
@@ -44,11 +40,8 @@ const content = {
       'Welcome to EQUORA. A new concept of equine medicine, built around what matters most: the horse.',
     book: 'Book an appointment',
     explore: 'See our services',
-    cardEyebrow: 'Our philosophy',
-    cardTitle: 'The horse, always at the centre.',
     belief:
       'We believe in medicine that combines science, experience and care, always putting the horse at the centre.',
-    pillars: ['Science', 'Experience', 'Care'],
     servicesEyebrow: 'Our services',
     servicesTitle: 'Comprehensive equine medicine.',
     servicesIntro:
@@ -79,13 +72,16 @@ export default function HomePage() {
   return (
     <>
       <section className="paper-grid overflow-hidden border-b border-[#17352f]/10">
-        <div className="mx-auto grid min-h-[640px] max-w-7xl items-center gap-14 px-5 py-20 lg:grid-cols-[1.05fr_0.95fr] lg:px-8">
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-5 py-16 lg:grid-cols-2 lg:gap-16 lg:px-8 lg:py-24">
           <div>
             <p className="eyebrow text-[#d86f52]">{c.eyebrow}</p>
-            <h1 className="mt-6 max-w-3xl text-5xl font-semibold leading-[0.98] tracking-[-0.04em] md:text-7xl">
+            <h1 className="mt-5 text-5xl font-semibold leading-[1.02] tracking-[-0.03em] md:text-6xl">
               {c.title}
             </h1>
-            <p className="mt-7 max-w-xl text-lg leading-8 text-[#46645d]">{c.welcome}</p>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-[#46645d]">{c.welcome}</p>
+            <p className="mt-6 max-w-xl border-l-4 border-[#d86f52] pl-5 font-display text-xl leading-8 text-[#17352f]">
+              {c.belief}
+            </p>
             <div className="mt-9 flex flex-wrap gap-3">
               <a
                 href={clinicContact.phoneLink}
@@ -102,33 +98,11 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="relative mx-auto w-full max-w-xl lg:pb-24">
-            <img
-              src="/home/grey-horse.jpg"
-              alt={c.photos.hero}
-              className="aspect-[4/3] w-full rounded-[2.5rem] object-cover object-[85%_center] shadow-2xl shadow-[#174f45]/20"
-            />
-            <div className="relative mx-4 -mt-10 rounded-[2rem] bg-[#174f45] p-6 text-white shadow-2xl shadow-[#174f45]/30 md:p-7 lg:absolute lg:-bottom-2 lg:left-[-4rem] lg:mx-0 lg:mt-0 lg:w-[50%]">
-              <div className="flex items-center justify-between gap-4">
-                <span className="eyebrow text-[#b8d3c5]">{c.cardEyebrow}</span>
-                <EquoraMark className="h-9 w-9" />
-              </div>
-              <p className="font-display mt-4 text-2xl font-semibold leading-tight md:text-3xl">
-                {c.cardTitle}
-              </p>
-              <p className="mt-3 text-sm leading-6 text-white/75">{c.belief}</p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {c.pillars.map((label) => (
-                  <span
-                    key={label}
-                    className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold"
-                  >
-                    {label}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
+          <img
+            src="/home/grey-horse.jpg"
+            alt={c.photos.hero}
+            className="aspect-[4/3] w-full rounded-[2.5rem] object-cover object-[70%_center] shadow-2xl shadow-[#174f45]/20 lg:aspect-[5/6]"
+          />
         </div>
       </section>
 
