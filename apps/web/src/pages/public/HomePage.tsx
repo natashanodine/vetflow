@@ -30,6 +30,12 @@ const content = {
     teamTitle: 'Un equipo. Un mismo propósito: el bienestar de tu caballo.',
     teamText: 'Conoce a los veterinarios detrás de EQUORA y su experiencia en medicina equina.',
     teamLink: 'Conoce al equipo →',
+    photos: {
+      hero: 'Caballo tordo de perfil',
+      foal: 'Potro recién nacido descansando en el pasto',
+      mareFoal: 'Yegua y su potro galopando en un campo',
+      herd: 'Tres caballos en un prado',
+    },
   },
   en: {
     eyebrow: 'A new vision of equine medicine',
@@ -56,6 +62,12 @@ const content = {
     teamTitle: 'One team. One purpose: your horse’s well-being.',
     teamText: 'Meet the veterinarians behind EQUORA and their experience in equine medicine.',
     teamLink: 'Meet the team →',
+    photos: {
+      hero: 'Grey horse in profile',
+      foal: 'Newborn foal resting in the grass',
+      mareFoal: 'Mare and foal galloping across a field',
+      herd: 'Three horses in a meadow',
+    },
   },
 }
 
@@ -90,23 +102,29 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="relative mx-auto w-full max-w-xl pb-10 pt-6">
-            <div className="absolute left-0 top-0 h-56 w-56 rounded-full bg-[#dce9df]" />
-            <div className="absolute bottom-0 right-0 h-48 w-48 rounded-full bg-[#f0c9b9]" />
-            <div className="relative ml-auto w-[88%] rounded-[2.5rem] bg-[#174f45] p-7 text-white shadow-2xl shadow-[#174f45]/20 md:p-10">
-              <div className="flex items-center justify-between border-b border-white/15 pb-7">
+          <div className="relative mx-auto w-full max-w-xl lg:pb-24">
+            <img
+              src="/home/grey-horse.jpg"
+              alt={c.photos.hero}
+              className="aspect-[4/3] w-full rounded-[2.5rem] object-cover object-[85%_center] shadow-2xl shadow-[#174f45]/20"
+            />
+            <div className="relative mx-4 -mt-10 rounded-[2rem] bg-[#174f45] p-6 text-white shadow-2xl shadow-[#174f45]/30 md:p-7 lg:absolute lg:-bottom-2 lg:left-[-4rem] lg:mx-0 lg:mt-0 lg:w-[50%]">
+              <div className="flex items-center justify-between gap-4">
                 <span className="eyebrow text-[#b8d3c5]">{c.cardEyebrow}</span>
-                <EquoraMark className="h-10 w-10" />
+                <EquoraMark className="h-9 w-9" />
               </div>
-              <div className="py-9">
-                <p className="font-display text-4xl font-semibold leading-tight">{c.cardTitle}</p>
-                <p className="mt-5 text-sm leading-6 text-white/70">{c.belief}</p>
-              </div>
-              <div className="grid grid-cols-3 gap-3">
+              <p className="font-display mt-4 text-2xl font-semibold leading-tight md:text-3xl">
+                {c.cardTitle}
+              </p>
+              <p className="mt-3 text-sm leading-6 text-white/75">{c.belief}</p>
+              <div className="mt-5 flex flex-wrap gap-2">
                 {c.pillars.map((label) => (
-                  <div key={label} className="rounded-2xl bg-white/10 p-4 text-center">
-                    <p className="font-bold">{label}</p>
-                  </div>
+                  <span
+                    key={label}
+                    className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold"
+                  >
+                    {label}
+                  </span>
                 ))}
               </div>
             </div>
@@ -128,6 +146,12 @@ export default function HomePage() {
             >
               {c.servicesLink}
             </Link>
+            <img
+              src="/home/foal-resting.jpg"
+              alt={c.photos.foal}
+              loading="lazy"
+              className="mt-10 hidden aspect-[4/5] w-full max-w-sm rounded-[2rem] object-cover object-[60%_center] lg:block"
+            />
           </div>
           <div className="divide-y divide-[#17352f]/15 border-y border-[#17352f]/15">
             {serviceList.map((service, index) => (
@@ -145,14 +169,22 @@ export default function HomePage() {
 
       <section id="reproduction" className="scroll-mt-4 bg-[#17352f] text-white">
         <div className="mx-auto max-w-7xl px-5 py-24 lg:px-8">
-          <div className="max-w-3xl">
-            <p className="eyebrow text-[#e59779]">{evaluation.eyebrow}</p>
-            <h2 className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">
-              {evaluation.title}
-            </h2>
-            <p className="mt-5 leading-7 text-white/70">{evaluation.intro}</p>
-            <p className="eyebrow mt-8 text-[#b8d3c5]">{evaluation.question}</p>
+          <div className="grid items-center gap-10 lg:grid-cols-[1fr_1fr]">
+            <div>
+              <p className="eyebrow text-[#e59779]">{evaluation.eyebrow}</p>
+              <h2 className="mt-4 text-4xl font-semibold tracking-tight md:text-5xl">
+                {evaluation.title}
+              </h2>
+              <p className="mt-5 leading-7 text-white/70">{evaluation.intro}</p>
+            </div>
+            <img
+              src="/home/mare-and-foal.jpg"
+              alt={c.photos.mareFoal}
+              loading="lazy"
+              className="aspect-[3/2] w-full rounded-[2rem] object-cover"
+            />
           </div>
+          <p className="eyebrow mt-12 text-[#b8d3c5]">{evaluation.question}</p>
 
           <ol className="mt-8 grid gap-6 md:grid-cols-2 lg:grid-cols-5">
             {evaluation.steps.map((step, index) => (
@@ -190,10 +222,21 @@ export default function HomePage() {
 
       <section className="bg-[#efe7d9]">
         <div className="mx-auto grid max-w-7xl gap-12 px-5 py-24 lg:grid-cols-2 lg:px-8">
-          <div className="rounded-[2rem] bg-[#d86f52] p-9 text-white md:p-12">
-            <p className="eyebrow text-white/75">{c.differentEyebrow}</p>
-            <h2 className="mt-5 text-4xl font-semibold leading-tight">{c.differentTitle}</h2>
-            <p className="mt-5 leading-7 text-white/85">{c.differentText}</p>
+          <div className="relative min-h-[520px] overflow-hidden rounded-[2rem]">
+            <img
+              src="/home/horses-in-field.jpg"
+              alt={c.photos.herd}
+              loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#17352f]/95 via-[#17352f]/45 to-transparent" />
+            <div className="relative flex h-full min-h-[520px] flex-col justify-end p-9 text-white md:p-12">
+              <p className="eyebrow text-[#f0c9b9]">{c.differentEyebrow}</p>
+              <h2 className="mt-4 text-3xl font-semibold leading-tight md:text-4xl">
+                {c.differentTitle}
+              </h2>
+              <p className="mt-4 leading-7 text-white/85">{c.differentText}</p>
+            </div>
           </div>
           <div className="flex flex-col justify-center">
             <p className="eyebrow text-[#174f45]">{c.teamEyebrow}</p>
